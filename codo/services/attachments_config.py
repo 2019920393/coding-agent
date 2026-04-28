@@ -1,0 +1,35 @@
+"""
+Attachment 配置常量
+
+"""
+
+# TODO 提醒配置
+TODO_REMINDER_CONFIG = {
+    "TURNS_SINCE_WRITE": 10,        # 写入后多少轮开始提醒
+    "TURNS_BETWEEN_REMINDERS": 10,  # 提醒间隔
+}
+
+# Plan Mode 附件配置
+PLAN_MODE_ATTACHMENT_CONFIG = {
+    "TURNS_BETWEEN_ATTACHMENTS": 5,      # 每 5 轮附加一次提醒
+    "FULL_REMINDER_EVERY_N_ATTACHMENTS": 5,  # 每 5 次提醒中有 1 次完整提醒
+}
+
+# Auto Mode 附件配置
+AUTO_MODE_ATTACHMENT_CONFIG = {
+    "TURNS_BETWEEN_ATTACHMENTS": 5,
+    "FULL_REMINDER_EVERY_N_ATTACHMENTS": 5,
+}
+
+# Memory 相关配置
+MAX_MEMORY_LINES = 200
+MAX_MEMORY_BYTES = 4096
+
+RELEVANT_MEMORIES_CONFIG = {
+    "MAX_SESSION_BYTES": 60 * 1024,  # 60KB
+}
+
+# Verify Plan 提醒配置
+VERIFY_PLAN_REMINDER_CONFIG = {
+    "TURNS_BETWEEN_REMINDERS": 10,
+}
