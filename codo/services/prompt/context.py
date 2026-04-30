@@ -320,10 +320,31 @@ def get_user_context(cwd: str) -> Dict[str, str]:
 
     # 加载自动记忆系统
     try:
-        from codo.services.memory import MemoryLoader, get_auto_memory_path
-        memory_dir = get_auto_memory_path(cwd)
-        loader = MemoryLoader(memory_dir)
-        memory_context = loader.build_memory_context()
+        from codo.services.memory.paths import ensure_memory_dir
+        from codo.services.memory.scan import load_memory_index
+        memory_dir = str(ensure_memory_dir(cwd))
+        index_content = load_memory_index(cwd)
+        memory_context = None
+        if index_content:
+            memory_context = (
+                f"""# auto memory
+
+You have a persistent, file-based memory system at `{memory_dir}`. This directory already exists and can be updated directly.
+
+Use it to retain durable collaboration context across sessions: user preferences, confirmed project facts, long-running task context, references, and high-signal feedback.
+
+## Types of memory
+
+Store durable information in topic-based markdown files with frontmatter and keep `MEMORY.md` as the concise index.
+
+## How to save memories
+
+1. Write or update a dedicated markdown file with frontmatter fields `name`, `description`, and `type`.
+2. Add or update a matching entry in `MEMORY.md`.
+
+{index_content}
+"""
+            )
         if memory_context:
             context["autoMemory"] = memory_context
             log_info('auto_memory_loaded', {

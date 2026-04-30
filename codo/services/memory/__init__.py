@@ -31,8 +31,6 @@ from codo.services.memory.scan import (
 )
 from codo.services.memory.types import MemoryType, MemoryFrontmatter, MemoryFile
 from codo.services.memory.manager import MemoryManager
-from codo.services.memory.scanner import MemoryScanner
-from codo.services.memory.loader import MemoryLoader
 from codo.services.memory.prompts import build_extract_prompt
 from codo.services.memory.extract import (
     extract_memories,

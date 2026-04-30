@@ -827,6 +827,7 @@ async def query_loop(
                 "session_id": session_id,
                 "queued_commands": execution_context.get("queued_commands", []) if execution_context else [],
                 "ide_selection": execution_context.get("ide_selection") if execution_context else None,
+                "app_state": execution_context.get("options", {}).get("app_state", {}) if execution_context else {},
             }
             if execution_context is not None and "queued_commands" in execution_context:
                 execution_context["queued_commands"] = []

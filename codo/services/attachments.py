@@ -67,9 +67,10 @@ async def get_attachment_messages(
     1. 收集 queued_command 附件
     2. 收集 IDE selection 附件
     3. 收集 plan mode 提醒（如果在 plan mode）
-    4. 收集 todo 提醒（如果需要）
-    5. 收集 memory 附件（TODO: 需要 memory 系统）
-    6. 过滤重复附件
+    4. 收集 todo 提醒（如果有未完成任务）
+    5. 过滤重复附件
+
+    注：memory 预取在 query.py 中通过 start_relevant_memory_prefetch() 完成。
 
     Args:
         messages: 当前消息历史
@@ -148,18 +149,24 @@ async def get_attachment_messages(
                 })
 
     # ========================================================================
-    # 4. TODO 提醒
+    # 4. TODO 提醒：注入当前任务列表状态，帮助模型保持进度感知
     # ========================================================================
-    # TODO: 实现 TODO 提醒逻辑（需要跟踪上次写入 TODO 的轮次与完成状态）。
+    app_state = context.get("app_state") or {}
+    todos_dict = app_state.get("todos") or {}
+    session_id = context.get("session_id", "default")
+    session_todos = todos_dict.get(session_id, [])
+    if session_todos:
+        in_progress = [t for t in session_todos if t.get("status") == "in_progress"]
+        pending = [t for t in session_todos if t.get("status") == "pending"]
+        if in_progress or pending:
+            attachments.append({
+                "type": "todo_reminder",
+                "in_progress": in_progress,
+                "pending": pending,
+            })
 
     # ========================================================================
-    # 5. Memory 附件（TODO: 需要 memory 系统支持）
-    # ========================================================================
-
-    # 当前版本先跳过，避免引入未完成记忆系统导致不稳定。
-
-    # ========================================================================
-    # 6. 过滤重复附件
+    # 5. 过滤重复附件
     # ========================================================================
 
     # 将附件载荷转换为统一消息格式，便于 query 循环逐条产出。
