@@ -15,7 +15,7 @@ from .agents import (
     get_builtin_agents,
     find_agent_by_type,
 )
-from .prompt import AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME
+from .prompt import AGENT_TOOL_NAME
 from .utils import filter_tools_for_agent, extract_final_text
 
 __all__ = [
@@ -30,7 +30,6 @@ __all__ = [
     "get_builtin_agents",
     "find_agent_by_type",
     "AGENT_TOOL_NAME",
-    "LEGACY_AGENT_TOOL_NAME",
     "filter_tools_for_agent",
     "extract_final_text",
 ]

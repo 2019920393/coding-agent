@@ -116,9 +116,9 @@ class APIRequestAssembler:
         # 4. 转换工具列表
         tools = get_all_tools()
 
-        # 获取可用的 agent 定义
-        from codo.tools.agent_tool.agents import get_builtin_agents
-        agents = list(get_builtin_agents().values())
+        # 获取可用的 agent 定义（内置 + 用户级 + 项目级自定义）
+        from codo.tools.agent_tool.agents import load_all_agents
+        agents = load_all_agents(self.cwd)
 
         tool_schemas = await tools_to_api_schemas(tools, agents)
 

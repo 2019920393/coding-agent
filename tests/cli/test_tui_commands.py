@@ -539,7 +539,7 @@ async def test_memory_commands_list_view_delete_and_index(sandbox_home, tmp_path
         manager.create_memory(
             name="Release Plan",
             description="Notes for launch",
-            memory_type="project",
+            memory_type="project_fact",
             content="Ship on Friday",
             topic="release_plan",
         )

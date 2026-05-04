@@ -83,10 +83,10 @@ class PromptBuilder:
                 }
             ]
 
-        # 获取环境信息
+        # 获取可用的工具集合名字  set集合
         enabled_tools = self.get_enabled_tools()
 
-        # 获取用户上下文和系统上下文（使用 memoize 缓存的函数）
+        # 获取用户上下文和系统上下文（使用 memoize 缓存的函数） 包括记忆索引
         user_context_dict = get_user_context(self.cwd)
         system_context_dict = get_system_context(self.cwd)
 

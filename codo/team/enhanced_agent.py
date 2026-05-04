@@ -87,6 +87,7 @@ async def run_subagent_with_mode(
             tools=agent_tools,
             model=model,
             is_background=run_in_background,
+            max_turns = agent_def.max_turns
         )
 
     # Step 3: Execute (foreground or background)
@@ -118,8 +119,7 @@ async def _run_foreground_subagent(
     """
     from codo.tools.agent_tool.agent_tool import _run_sub_agent
 
-    # api_client 可能在 parent_context 顶层或 options 子字典里
-    api_client = parent_context.get("api_client") or parent_context.get("options", {}).get("api_client")
+    api_client = parent_context.get("api_client")
     cwd = parent_context.get("cwd", ".")
     runtime_controller = parent_context.get("runtime_controller")
     interaction_broker = parent_context.get("interaction_broker") or runtime_controller
@@ -159,6 +159,7 @@ async def _run_foreground_subagent(
             tools=subagent_ctx.tools,
             prompt=args.prompt,
             cwd=cwd,
+            max_turns=subagent_ctx.max_turns,
             agent_id=subagent_ctx.agent_id,
             interaction_broker=interaction_broker,
             permission_context=permission_context,
@@ -280,6 +281,7 @@ async def _run_background_subagent(
                 tools=subagent_ctx.tools,
                 prompt=args.prompt,
                 cwd=cwd,
+                max_turns=subagent_ctx.max_turns,
                 agent_id=subagent_ctx.agent_id,
                 interaction_broker=interaction_broker,
                 permission_context=permission_context,

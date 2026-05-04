@@ -122,7 +122,7 @@ class LoadedSession(BaseModel):
     metadata: SessionMetadata
     leaf_uuids: List[str] = Field(default_factory=list)
     content_replacements: List[Dict[str, Any]] = Field(default_factory=list)
-
+ #记录被截断/替换的内容。
 # ============================================================================
 # 会话外部元数据（用于 UI/API）
 # ============================================================================

@@ -102,6 +102,19 @@ def create_mcp_tool_class(
     """
     # 包装 call_func 为实例方法
     async def call_method(self, input_data, context, on_progress=None):
+        """
+        MCP 工具调用方法（由 create_mcp_tool_class 动态注入）。
+
+        将调用委托给外部传入的 call_func，实现 MCP 服务器工具的实际执行。
+
+        参数:
+            input_data: 工具输入参数（MCPToolInput 或其子类）
+            context: 工具使用上下文
+            on_progress: 进度回调（可选）
+
+        返回:
+            ToolResult[MCPToolOutput]: 工具执行结果
+        """
         return await call_func(input_data, context, on_progress)
 
     # 创建子类

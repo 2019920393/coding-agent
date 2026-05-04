@@ -24,30 +24,38 @@ class AskUserQuestionTool(Tool[AskUserQuestionInput, AskUserQuestionOutput, None
     """
 
     def __init__(self):
+        """初始化 AskUserQuestionTool，设置工具名称和最大结果大小。"""
         self.name = ASK_USER_QUESTION_TOOL_NAME
         self.max_result_size_chars = MAX_RESULT_SIZE_CHARS
 
     @property
     def input_schema(self) -> type[AskUserQuestionInput]:
+        """返回输入 schema 类 AskUserQuestionInput。"""
         return AskUserQuestionInput
 
     @property
     def output_schema(self) -> type[AskUserQuestionOutput]:
+        """返回输出 schema 类 AskUserQuestionOutput。"""
         return AskUserQuestionOutput
 
     async def description(self, input_data: AskUserQuestionInput, options: Dict[str, Any]) -> str:
+        """返回工具简短描述。"""
         return DESCRIPTION
 
     async def prompt(self, options: Dict[str, Any]) -> str:
+        """返回系统提示词中的工具描述。"""
         return PROMPT
 
     def is_read_only(self, input_data: AskUserQuestionInput = None) -> bool:
+        """用户问答是只读操作（不修改文件系统），返回 True。"""
         return True
 
     def is_concurrency_safe(self, input_data: AskUserQuestionInput = None) -> bool:
+        """用户问答是并发安全的，返回 True。"""
         return True
 
     def requires_user_interaction(self) -> bool:
+        """用户问答工具需要用户交互，返回 True。"""
         return True
 
     @staticmethod

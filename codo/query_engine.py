@@ -155,7 +155,7 @@ class QueryEngine:
         self.max_turns = max_turns
 
         # 扩展思考配置
-
+# todo 对不支持的思考的模型未做处理
         self.thinking_config = thinking_config  # None 表示禁用，字典表示启用并携带预算
 
         # 客户端
@@ -192,12 +192,11 @@ class QueryEngine:
         self.execution_context = {
             "cwd": cwd,
             "session_id": self.session_id,
-            "permission_context": create_default_permission_context(cwd),
+            "permission_context": create_default_permission_context(cwd), #返回的是ToolPermissionContext对象
             "abort_controller": self.abort_controller,  # 传递 AbortController 到工具执行层
             "options": {
                 "api_client": self.client,
                 "model": self.model,
-                "cwd": cwd,
                 "tools": [],  # 稍后在 refresh_mcp_tools 中填充
                 # AskUserQuestion 在运行时启用宽松问号规范化，降低模型格式波动导致的失败率
                 "normalize_question_mark": True,
@@ -233,19 +232,31 @@ class QueryEngine:
         self.tools = self.builtin_tools + self.mcp_tools
 
         # 同步 execution_context 中的工具列表
-        self.execution_context["options"]["tools"] = self.tools
+        self.execution_context["options"]["tools"] = self.tools # tool实例对象
 
         # API 工具模式定义（将在 submit_message 中异步生成）
         self.tool_schemas = None
 
         # 提示词构建器（用于生成系统提示词）
         self.prompt_builder = PromptBuilder(cwd=cwd)
-        self._skill_catalog_signature: tuple[Any, ...] = ()
+        self._skill_catalog_signature: tuple[Any, ...] = () #变更skill签名检测  把所有关键字段拼成一个tupple作为签名
         self.refresh_skills()
 
     def refresh_skills(self) -> int:
-        """重新加载当前工作目录可见的 skill，并在目录变更时失效工具 schema。"""
-        loaded = skill_tool.load_all_skills(self.cwd)
+        """
+        重新加载当前工作目录可见的 skill，并在目录变更时失效工具 schema。
+
+        [Workflow]
+        1. 调用 skill_tool.load_all_skills() 扫描并加载 .kiro/skills/ 下的技能文件
+        2. 对所有已加载技能的关键字段生成签名 tuple（用于变更检测）
+        3. 若签名与上次不同，说明技能目录有变化，清空 tool_schemas 缓存
+        4. 更新签名缓存，返回加载的技能数量
+
+        返回:
+            int: 成功加载的 skill 数量，如 3
+        """
+        loaded = skill_tool.load_all_skills(self.cwd)  # 返回加载了 skill 的数量
+        # 把所有关键字段拼成一个 tuple 作为签名，用于检测技能目录是否发生变化
         signature = tuple(
             (
                 item.name,
@@ -256,9 +267,10 @@ class QueryEngine:
                 item.user_invocable,
                 item.source_path,
             )
-            for item in skill_tool.list_skills()
+            for item in skill_tool.list_skills()  # 返回的是 SkillDefinition 列表
         )
         if signature != self._skill_catalog_signature:
+            # 签名变化说明技能目录有更新，清空 schema 缓存，下次请求时重新生成
             self._skill_catalog_signature = signature
             self.tool_schemas = None
         return loaded
@@ -284,11 +296,13 @@ class QueryEngine:
         self.tools = self.builtin_tools + self.mcp_tools
 
         # 更新 execution_context 中的工具列表（供 AgentTool 使用）
-        self.execution_context["options"]["tools"] = self.tools
+        self.execution_context["options"]["tools"] = self.tools # tool实例
 
         # 如果已经生成过工具模式定义，则按最新工具池重新生成
         if self.tool_schemas is not None:
-            self.tool_schemas = await tools_to_api_schemas(self.tools)
+            from codo.tools.agent_tool.agents import load_all_agents
+            agents = load_all_agents(self.cwd) #AgentDefinition 的列表
+            self.tool_schemas = await tools_to_api_schemas(self.tools, agents)
 
         return len(self.mcp_tools)
 
@@ -331,21 +345,44 @@ class QueryEngine:
             if self.verbose:
                 print(f"[会话恢复] 恢复失败: {e}")
             return False
-
+#这个函数就是从持久化的 runtime_state 里捞出需要的字段，塞回引擎的 execution_context，让引擎"接着上次的状态继续"。
     def _restore_runtime_state(self, runtime_state: Dict[str, Any]) -> None:
+        """
+        从持久化的 runtime_state 恢复运行时状态到 execution_context。
+
+        [Workflow]
+        1. 校验 runtime_state 是否为合法字典
+        2. 恢复 app_state（主要是 todos 数据）到 execution_context["options"]["app_state"]
+        3. 恢复 permission_mode 到 permission_context.mode
+
+        作用：让引擎在恢复会话后"接着上次的状态继续"，
+        例如保留上次的 TODO 列表和权限模式，而不是从零开始。
+
+        参数:
+            runtime_state: 从磁盘加载的运行时状态字典，结构如：
+                {
+                    "app_state": {
+                        "todos": {
+                            "session_abc": [
+                                {"id": "todo_1", "content": "实现登录功能", "status": "pending"}
+                            ]
+                        }
+                    },
+                    "permission_mode": "auto"
+                }
+        """
         if not isinstance(runtime_state, dict):
-            return
+            return  # 非法输入直接跳过，不影响正常启动
 
         options = self.execution_context.setdefault("options", {})
-        if not isinstance(options, dict):
-            options = {}
-            self.execution_context["options"] = options
 
+        # 恢复 app_state（主要是 todos 数据）
         restored_app_state = runtime_state.get("app_state")
         if isinstance(restored_app_state, dict):
             app_state = dict(options.get("app_state", {}) or {})
             todos = restored_app_state.get("todos")
             if isinstance(todos, dict):
+                # 深拷贝 todos，避免引用共享导致状态污染
                 app_state["todos"] = {
                     str(key): [dict(item) for item in value if isinstance(item, dict)]
                     for key, value in todos.items()
@@ -353,6 +390,7 @@ class QueryEngine:
                 }
             options["app_state"] = app_state
 
+        # 恢复权限模式（如 "auto"、"manual"）
         permission_mode = runtime_state.get("permission_mode")
         if permission_mode:
             try:
@@ -362,8 +400,9 @@ class QueryEngine:
                 if permission_context is not None:
                     permission_context.mode = PermissionMode(str(permission_mode))
             except Exception:
-                pass
-
+                pass  # 权限模式恢复失败时静默跳过，使用默认值
+            
+#这个函数是处理一条用户消息的入口。用户每发一条消息，UI 就调它。
     async def submit_message_stream(
         self,
         prompt: str,
@@ -427,7 +466,9 @@ class QueryEngine:
 
         # 生成工具模式（首次请求时按当前工具池懒加载）
         if self.tool_schemas is None:
-            self.tool_schemas = await tools_to_api_schemas(self.tools)
+            from codo.tools.agent_tool.agents import load_all_agents
+            agents = load_all_agents(self.cwd)
+            self.tool_schemas = await tools_to_api_schemas(self.tools, agents)
 
         # 构建系统提示词
         system_prompt_blocks = self.prompt_builder.build_system_prompt(
@@ -479,6 +520,16 @@ class QueryEngine:
         )
 
         async def _pump_query_events() -> None:
+            """
+            后台任务：驱动 query() 主循环，将产出的事件转发到 runtime_controller。
+
+            [Workflow]
+            1. 异步迭代 query(query_params) 产出的每个事件
+            2. 通过 runtime_controller.emit() 推送给消费方
+            3. 若被 CancelledError 取消，发送 user_interrupted 错误事件后重新抛出
+            4. 若发生其他异常，发送 runtime_error 错误事件
+            5. finally 块中调用 runtime_controller.finish() 通知消费方流结束
+            """
             try:
                 async for event in query(query_params):
                     await runtime_controller.emit(event)
@@ -509,6 +560,19 @@ class QueryEngine:
                 await runtime_controller.finish()
 
         async def _pump_runtime_commands() -> None:
+            """
+            后台任务：持续消费 runtime_controller 的命令队列，将控制命令分发到引擎。
+
+            [Workflow]
+            1. 循环从 runtime_controller.next_command() 取命令
+            2. 遇到哨兵值（_COMMAND_SENTINEL）时退出循环
+            3. 按命令类型分发：
+               - interrupt: 触发 abort_controller 并取消 pump 任务
+               - resolve_interaction: 将用户选择结果回传给等待方
+               - cancel_interaction: 取消当前交互请求
+               - retry_checkpoint: 恢复到指定检查点并通知 UI
+               - switch_sidebar_focus: 通知 UI 切换侧边栏焦点
+            """
             while True:
                 command = await runtime_controller.next_command()
                 if command is QueryRuntimeController._COMMAND_SENTINEL:
@@ -799,8 +863,22 @@ class QueryEngine:
         self.send_control(RuntimeCommand(type="interrupt"))
 
     def send_control(self, command: RuntimeCommand | Dict[str, Any]) -> None:
-        """发送运行时控制命令到当前活动会话。"""
+        """
+        发送运行时控制命令到当前活动会话。
+
+        [Workflow]
+        1. 若 command 是字典，先转换为 RuntimeCommand 对象
+        2. 若当前有活动的 runtime_controller，通过事件循环异步发送命令
+        3. 若无活动控制器，则直接在本地处理部分命令（interrupt / resolve / cancel）
+
+        参数:
+            command: 控制命令，可以是 RuntimeCommand 对象或字典，如：
+                {"type": "interrupt"}
+                {"type": "resolve_interaction", "request_id": "perm_001", "data": True}
+                RuntimeCommand(type="retry_checkpoint", payload={"checkpoint_id": "ckpt_abc"})
+        """
         if isinstance(command, dict):
+            # 将字典格式命令转换为 RuntimeCommand 对象，type 字段单独提取
             command = RuntimeCommand(
                 type=str(command.get("type", "")),
                 payload={key: value for key, value in command.items() if key != "type"},
@@ -808,13 +886,16 @@ class QueryEngine:
         if self._runtime_controller is not None:
             try:
                 loop = asyncio.get_running_loop()
+                # 在当前事件循环中异步发送命令，不阻塞调用方
                 loop.create_task(self._runtime_controller.send_command(command))
                 return
             except RuntimeError:
-                pass
+                pass  # 无事件循环时降级到同步处理
 
+        # 降级处理：无活动控制器时直接在本地执行关键命令
         if command.type == "interrupt":
             self.abort_controller.abort("interrupt")
+            # 取消正在运行的 pump 任务，触发 CancelledError 让 query_loop 优雅退出
             if self._runtime_pump_task is not None and not self._runtime_pump_task.done():
                 self._runtime_pump_task.cancel()
         elif command.type == "resolve_interaction":
@@ -837,7 +918,18 @@ class QueryEngine:
             return
 
     def resolve_interaction(self, request_id: str, data: Any) -> None:
-        """完成当前运行时交互请求。"""
+        """
+        完成当前运行时交互请求（如权限确认、用户输入）。
+
+        [Workflow]
+        1. 将 resolve_interaction 命令封装为 RuntimeCommand
+        2. 通过 send_control 发送到运行时控制器
+        3. 控制器将结果回传给等待中的工具执行层
+
+        参数:
+            request_id: 交互请求的唯一 ID，如 "perm_a1b2c3"
+            data: 用户的响应数据，如 True（允许）/ False（拒绝）/ 字符串输入
+        """
         self.send_control(
             RuntimeCommand(
                 type="resolve_interaction",
@@ -846,7 +938,28 @@ class QueryEngine:
         )
 
     def retry_checkpoint(self, checkpoint_id: str) -> Optional[RuntimeCheckpoint]:
-        """恢复到指定 checkpoint 对应的运行时快照。"""
+        """
+        恢复到指定 checkpoint 对应的运行时快照，并重新触发执行。
+
+        [Workflow]
+        1. 从已归档或当前控制器中查找 checkpoint
+        2. 若找到，恢复消息历史和轮次计数
+        3. 发送 retry_checkpoint 命令通知运行时控制器
+        4. 返回 checkpoint 对象（供调用方确认恢复成功）
+
+        参数:
+            checkpoint_id: 要恢复的检查点 ID，如 "ckpt_a1b2c3d4"
+
+        返回:
+            RuntimeCheckpoint: 恢复的检查点对象，若未找到则返回 None
+            # 示例：
+            # RuntimeCheckpoint(
+            #     checkpoint_id="ckpt_a1b2c3d4",
+            #     phase="execute_tools",
+            #     turn_count=3,
+            #     metadata={"messages_state": [...], "message_count": 6}
+            # )
+        """
         checkpoint = self._lookup_checkpoint(checkpoint_id)
         if checkpoint is None:
             return None
@@ -874,6 +987,15 @@ class QueryEngine:
         self.execution_context["abort_controller"] = self.abort_controller
 
     def _lookup_checkpoint(self, checkpoint_id: str) -> Optional[RuntimeCheckpoint]:
+        """
+        按 ID 查找检查点，优先从当前活动控制器查，其次从归档中查。
+
+        参数:
+            checkpoint_id: 检查点 ID，如 "ckpt_a1b2c3d4"
+
+        返回:
+            RuntimeCheckpoint 对象，未找到则返回 None
+        """
         if self._runtime_controller is not None:
             checkpoint = self._runtime_controller.get_checkpoint(checkpoint_id)
             if checkpoint is not None:
@@ -881,16 +1003,40 @@ class QueryEngine:
         return self._archived_checkpoints.get(checkpoint_id)
 
     def _restore_from_checkpoint(self, checkpoint: RuntimeCheckpoint) -> None:
+        """
+        从检查点恢复引擎状态（消息历史 + 轮次计数 + 中断状态）。
+
+        [Workflow]
+        1. 从 checkpoint.metadata 中提取 messages_state（优先）或 messages
+        2. 将消息列表深拷贝回 self.messages
+        3. 恢复 turn_count（最小值为 1）
+        4. 重置中断状态，允许下一次查询继续执行
+
+        参数:
+            checkpoint: 要恢复的检查点对象
+        """
         metadata = dict(checkpoint.metadata or {})
         messages = metadata.get("messages_state")
-        if not isinstance(messages, list):
-            messages = metadata.get("messages")
         if isinstance(messages, list):
             self.messages = [dict(message) if isinstance(message, dict) else message for message in messages]
         self.turn_count = max(1, int(checkpoint.turn_count))
         self.reset_interrupt_state()
 
     def _apply_checkpoint_restore(self, checkpoint_id: str) -> Optional[RuntimeCheckpoint]:
+        """
+        查找并应用检查点恢复（组合操作）。
+
+        [Workflow]
+        1. 调用 _lookup_checkpoint 查找检查点
+        2. 若找到则调用 _restore_from_checkpoint 恢复状态
+        3. 返回检查点对象（供调用方确认恢复成功）
+
+        参数:
+            checkpoint_id: 检查点 ID
+
+        返回:
+            RuntimeCheckpoint 对象，未找到则返回 None
+        """
         checkpoint = self._lookup_checkpoint(checkpoint_id)
         if checkpoint is None:
             return None

@@ -62,7 +62,7 @@ def test_metadata_recording():
 
         # custom-title
         assert records[0]["type"] == "custom-title"
-        assert records[0]["customTitle"] == "Test Session Title"
+        assert records[0]["custom_title"] == "Test Session Title"
         assert records[0]["source"] == "user"
 
         # tags
@@ -74,19 +74,19 @@ def test_metadata_recording():
         # summary
         assert records[3]["type"] == "summary"
         assert records[3]["summary"] == "Fixed authentication bug"
-        assert records[3]["leafUuid"] == "msg-123"
+        assert records[3]["leaf_uuid"] == "msg-123"
 
         # agent-name
         assert records[4]["type"] == "agent-name"
-        assert records[4]["agentName"] == "code-reviewer"
+        assert records[4]["agent_name"] == "code-reviewer"
 
         # agent-color
         assert records[5]["type"] == "agent-color"
-        assert records[5]["agentColor"] == "#FF5733"
+        assert records[5]["agent_color"] == "#FF5733"
 
         # agent-setting
         assert records[6]["type"] == "agent-setting"
-        assert records[6]["agentSetting"] == "explore"
+        assert records[6]["agent_setting"] == "explore"
 
         # mode
         assert records[7]["type"] == "mode"
@@ -94,14 +94,14 @@ def test_metadata_recording():
 
         # pr-link
         assert records[8]["type"] == "pr-link"
-        assert records[8]["prNumber"] == 42
-        assert records[8]["prUrl"] == "https://github.com/user/repo/pull/42"
-        assert records[8]["prRepository"] == "user/repo"
+        assert records[8]["pr_number"] == 42
+        assert records[8]["pr_url"] == "https://github.com/user/repo/pull/42"
+        assert records[8]["pr_repository"] == "user/repo"
 
         # worktree-state
         assert records[9]["type"] == "worktree-state"
-        assert records[9]["worktreeSession"]["path"] == "/tmp/worktree"
-        assert records[9]["worktreeSession"]["branch"] == "feature-x"
+        assert records[9]["worktree_session"]["path"] == "/tmp/worktree"
+        assert records[9]["worktree_session"]["branch"] == "feature-x"
 
         print("✓ 所有元数据记录正确")
 
@@ -218,16 +218,16 @@ def test_multiple_sessions():
             records1 = [json.loads(line) for line in f]
 
         assert len(records1) == 2
-        assert records1[0]["sessionId"] == "session-1"
-        assert records1[1]["sessionId"] == "session-1"
+        assert records1[0]["session_id"] == "session-1"
+        assert records1[1]["session_id"] == "session-1"
 
         # 读取会话 2 并验证
         with open(session2_file, "r", encoding="utf-8") as f:
             records2 = [json.loads(line) for line in f]
 
         assert len(records2) == 2
-        assert records2[0]["sessionId"] == "session-2"
-        assert records2[1]["sessionId"] == "session-2"
+        assert records2[0]["session_id"] == "session-2"
+        assert records2[1]["session_id"] == "session-2"
 
         print("✓ 多会话元数据隔离正确")
 

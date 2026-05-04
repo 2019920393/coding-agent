@@ -48,6 +48,7 @@ def extract_symbol_at_position(
 
     # 定义符号字符（字母、数字、下划线）
     def is_symbol_char(c: str) -> bool:
+        """判断字符是否为合法的符号字符（字母、数字或下划线）。"""
         return c.isalnum() or c == "_"
 
     # 如果当前字符不是符号字符，返回 None

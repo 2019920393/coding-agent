@@ -18,10 +18,10 @@ from uuid import uuid4
 test_session_id = str(uuid4())
 
 # 获取项目目录
-from codo.session.storage import get_project_dir, sanitize_path
+from codo.session.storage import get_sessions_dir
 
 cwd = os.getcwd()
-project_dir = get_project_dir(cwd)
+project_dir = str(get_sessions_dir(cwd))
 
 print(f"当前工作目录: {cwd}")
 print(f"项目目录: {project_dir}")

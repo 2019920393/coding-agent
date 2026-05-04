@@ -105,15 +105,7 @@ def get_sessions_dir(cwd: str) -> Path:
     session_dir.mkdir(parents=True, exist_ok=True)
     return session_dir
 
-def sanitize_path(path: str) -> str:
-    """Compatibility helper for project directory naming."""
-    abs_path = os.path.abspath(path)
-    sanitized = re.sub(r"[:\\\/]", "-", abs_path)
-    return sanitized.lstrip("-")
 
-def get_project_dir(project_path: str) -> str:
-    """Compatibility helper mirroring the old services.session_storage API."""
-    return str(get_sessions_dir(project_path))
 
 def get_session_file_path(session_id: str, cwd: str) -> Path:
     """
@@ -129,23 +121,18 @@ def get_session_file_path(session_id: str, cwd: str) -> Path:
     sessions_dir = get_sessions_dir(cwd)
     return sessions_dir / f"{session_id}.jsonl"
 
+
+# 新版append-onlu事件日志
 def get_session_event_log_path(session_id: str, cwd: str) -> Path:
     sessions_dir = get_sessions_dir(cwd)
     return sessions_dir / f"{session_id}.events.jsonl"
-
+#事件日志的物化快照（加速加载）
 def get_session_snapshot_path(session_id: str, cwd: str) -> Path:
     sessions_dir = get_sessions_dir(cwd)
     return sessions_dir / f"{session_id}.snapshot.json"
 
-def resolve_session_file_path(session_id: str, project_dir: str) -> Optional[str]:
-    """Resolve a transcript JSONL path from a concrete project session directory."""
-    file_path = Path(project_dir) / f"{session_id}.jsonl"
-    if file_path.exists() and file_path.is_file():
-        return str(file_path)
-    return None
-
 def list_session_files(project_dir: str) -> List[Tuple[str, str, int, float]]:
-    """List transcript JSONL files inside a project session directory."""
+    """列出项目会话目录内的转录 JSONL 文件"""
     project_path = Path(project_dir)
     if not project_path.exists() or not project_path.is_dir():
         return []
@@ -161,105 +148,7 @@ def list_session_files(project_dir: str) -> List[Tuple[str, str, int, float]]:
         sessions.append((file_path.stem, str(file_path), stat.st_size, stat.st_mtime))
     return sessions
 
-def _normalize_message_content(role: str, content: Any) -> Any:
-    normalized_role = str(role or "").strip().lower()
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        normalized_blocks: List[Dict[str, Any]] = []
-        text_fragments: List[str] = []
-        for item in content:
-            if isinstance(item, dict):
-                normalized_blocks.append(dict(item))
-            elif item is not None:
-                text_fragments.append(str(item))
-        if normalized_blocks:
-            if text_fragments:
-                normalized_blocks.extend({"type": "text", "text": fragment} for fragment in text_fragments)
-            return normalized_blocks
-        return "\n".join(fragment for fragment in text_fragments if fragment).strip()
-    if isinstance(content, dict):
-        if normalized_role == "assistant" and "type" in content:
-            return [dict(content)]
-        return [dict(content)]
-    if content is None:
-        return "" if normalized_role == "assistant" else ""
-    return str(content)
 
-def _normalize_message_record(
-    raw_message: Any,
-    *,
-    fallback_parent_uuid: Optional[str] = None,
-    fallback_timestamp: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
-    if not isinstance(raw_message, dict):
-        return None
-
-    msg_type = str(raw_message.get("type") or raw_message.get("role") or "").strip().lower()
-    if msg_type not in {"user", "assistant"}:
-        return None
-
-    msg_uuid = raw_message.get("uuid")
-    if not msg_uuid:
-        return None
-
-    normalized = dict(raw_message)
-    normalized["type"] = msg_type
-    normalized["role"] = msg_type
-    normalized["uuid"] = str(msg_uuid)
-    if fallback_parent_uuid and not normalized.get("parent_uuid"):
-        normalized["parent_uuid"] = fallback_parent_uuid
-    if not normalized.get("timestamp"):
-        normalized["timestamp"] = fallback_timestamp or datetime.now().isoformat()
-    normalized["content"] = _normalize_message_content(msg_type, normalized.get("content"))
-    return normalized
-
-def _sanitize_snapshot_messages(raw_messages: Any) -> List[Dict[str, Any]]:
-    if not isinstance(raw_messages, list):
-        return []
-    sanitized: List[Dict[str, Any]] = []
-    for raw_message in raw_messages:
-        normalized = _normalize_message_record(raw_message)
-        if normalized is not None:
-            sanitized.append(normalized)
-    return sanitized
-
-def _legacy_compatible_entry_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Augment transcript entries with camelCase aliases expected by legacy helpers."""
-    normalized = dict(payload)
-    alias_map = {
-        "session_id": "sessionId",
-        "custom_title": "customTitle",
-        "agent_name": "agentName",
-        "agent_color": "agentColor",
-        "last_prompt": "lastPrompt",
-    }
-    for source, alias in alias_map.items():
-        if source in normalized and alias not in normalized:
-            normalized[alias] = normalized[source]
-    return normalized
-
-def _safe_metadata_from_payload(session_id: str, raw_metadata: Any) -> SessionMetadata:
-    if isinstance(raw_metadata, SessionMetadata):
-        return raw_metadata
-    if isinstance(raw_metadata, dict):
-        payload = dict(raw_metadata)
-        payload.setdefault("session_id", session_id)
-        try:
-            return SessionMetadata.model_validate(payload)
-        except Exception:
-            return SessionMetadata(
-                session_id=session_id,
-                custom_title=payload.get("custom_title") or payload.get("title"),
-                tag=payload.get("tag"),
-                agent_name=payload.get("agent_name"),
-                agent_color=payload.get("agent_color"),
-                mode=payload.get("mode"),
-                last_prompt=payload.get("last_prompt"),
-                created_at=payload.get("created_at"),
-                updated_at=payload.get("updated_at"),
-            )
-    return SessionMetadata(session_id=session_id)
 
 # ============================================================================
 # 会话存储管理器
@@ -309,7 +198,7 @@ class SessionStorage:
         self._bootstrap_existing_transcript_state()
 
     def _bootstrap_existing_transcript_state(self) -> None:
-        """Restore recorded UUIDs and current transcript path from existing files."""
+        """从现有文件恢复已记录的通用唯一识别码及当前文稿路径"""
         transcript_path = self.transcript_file
         if transcript_path.exists():
             self.session_file = transcript_path
@@ -365,189 +254,6 @@ class SessionStorage:
         chain = build_conversation_chain(loaded.messages, target_leaf_uuid) if target_leaf_uuid else loaded.messages
         self._snapshot_messages = [msg.model_dump() for msg in chain]
 
-    def _load_legacy_transcript_records(self) -> List[Dict[str, Any]]:
-        session_file = get_session_file_path(self.session_id, self.cwd)
-        if not session_file.exists():
-            return []
-
-        records: List[Dict[str, Any]] = []
-        with open(session_file, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except Exception:
-                    continue
-                if isinstance(entry, dict):
-                    records.append(entry)
-        return records
-
-    @staticmethod
-    def _normalize_legacy_message(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        if not isinstance(record, dict):
-            return None
-
-        record_type = str(record.get("type") or "").strip()
-        role = str(record.get("role") or "").strip()
-        message_type = role if record_type == "message" and role in ("user", "assistant") else record_type
-        if message_type not in ("user", "assistant"):
-            return None
-
-        message_uuid = record.get("uuid")
-        if not message_uuid:
-            return None
-
-        normalized = dict(record)
-        normalized["type"] = message_type
-        normalized["role"] = role if role in ("user", "assistant") else message_type
-        normalized["uuid"] = str(message_uuid)
-
-        parent_uuid = normalized.get("parent_uuid") or normalized.get("parentUuid")
-        if parent_uuid:
-            normalized["parent_uuid"] = str(parent_uuid)
-        elif "parent_uuid" in normalized:
-            normalized["parent_uuid"] = None
-
-        if not normalized.get("timestamp"):
-            normalized["timestamp"] = datetime.now().isoformat()
-
-        return normalized
-
-    @staticmethod
-    def _legacy_metadata_payload(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        if not isinstance(record, dict):
-            return None
-
-        entry_type = str(record.get("type") or "")
-        if entry_type == "custom-title":
-            title = record.get("custom_title") or record.get("customTitle") or record.get("title")
-            if title:
-                return {"custom_title": title}
-        elif entry_type == "tag":
-            tag = record.get("tag")
-            if tag:
-                return {"tag": tag}
-        elif entry_type == "agent-name":
-            agent_name = record.get("agent_name") or record.get("agentName")
-            if agent_name:
-                return {"agent_name": agent_name}
-        elif entry_type == "agent-color":
-            agent_color = record.get("agent_color") or record.get("agentColor")
-            if agent_color:
-                return {"agent_color": agent_color}
-        elif entry_type == "mode":
-            mode = record.get("mode")
-            if mode:
-                return {"mode": mode}
-        elif entry_type == "last-prompt":
-            last_prompt = record.get("last_prompt") or record.get("lastPrompt")
-            if last_prompt:
-                return {"last_prompt": last_prompt}
-        return None
-
-    @staticmethod
-    def _legacy_content_replacement(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        if not isinstance(record, dict) or record.get("type") != "content-replacement":
-            return None
-        replacements = record.get("replacements")
-        if not isinstance(replacements, list):
-            return None
-        normalized_replacements = [dict(item) for item in replacements if isinstance(item, dict)]
-        if not normalized_replacements:
-            return None
-        payload: Dict[str, Any] = {"replacements": normalized_replacements}
-        agent_id = record.get("agent_id") or record.get("agentId")
-        if agent_id:
-            payload["agent_id"] = str(agent_id)
-        return payload
-
-    @staticmethod
-    def _extract_legacy_todos(records: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], Optional[str]]:
-        for record in reversed(records):
-            if not isinstance(record, dict):
-                continue
-            record_type = str(record.get("type") or "")
-            role = str(record.get("role") or "")
-            if record_type not in ("assistant", "message") or role != "assistant":
-                continue
-
-            content = record.get("content", [])
-            if not isinstance(content, list):
-                continue
-
-            for block in content:
-                if not isinstance(block, dict):
-                    continue
-                if block.get("type") == "tool_use" and block.get("name") == "TodoWrite":
-                    tool_input = block.get("input", {})
-                    todos = tool_input.get("todos", []) if isinstance(tool_input, dict) else []
-                    normalized = [dict(item) for item in todos if isinstance(item, dict)]
-                    return normalized, str(record.get("timestamp") or "") or None
-        return [], None
-
-    def _migrate_legacy_transcript_if_needed(self) -> bool:
-        existing_events = self._load_events_from_disk()
-        if existing_events:
-            return False
-
-        records = self._load_legacy_transcript_records()
-        if not records:
-            return False
-
-        migrated = False
-        for record in records:
-            created_at = str(record.get("timestamp") or "") or datetime.now().isoformat()
-
-            message = self._normalize_legacy_message(record)
-            if message is not None:
-                self.append_event(
-                    "message_recorded",
-                    {
-                        "message": message,
-                        "parent_uuid": message.get("parent_uuid"),
-                    },
-                    created_at=created_at,
-                )
-                migrated = True
-                continue
-
-            metadata_payload = self._legacy_metadata_payload(record)
-            if metadata_payload is not None:
-                self.append_event("metadata_updated", metadata_payload, created_at=created_at)
-                migrated = True
-                continue
-
-            replacement_payload = self._legacy_content_replacement(record)
-            if replacement_payload is not None:
-                agent_id = replacement_payload.pop("agent_id", None)
-                self.append_event(
-                    "content_replacement",
-                    replacement_payload,
-                    created_at=created_at,
-                    agent_id=agent_id,
-                )
-                migrated = True
-
-        todos, todo_timestamp = self._extract_legacy_todos(records)
-        if todos:
-            self.append_event(
-                "todo_updated",
-                {
-                    "key": self.session_id,
-                    "items": todos,
-                },
-                created_at=todo_timestamp or datetime.now().isoformat(),
-            )
-            migrated = True
-
-        if not migrated:
-            return False
-
-        self.save_snapshot()
-        return True
-
     def load_messages(self, leaf_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         加载会话消息历史
@@ -566,11 +272,7 @@ class SessionStorage:
             and snapshot.messages
             and (latest_event_id is None or snapshot.last_event_id == latest_event_id)
         ):
-            sanitized_messages = _sanitize_snapshot_messages(snapshot.messages)
-            if sanitized_messages:
-                self._snapshot_messages = [dict(message) for message in sanitized_messages]
-            else:
-                self._snapshot_messages = []
+            self._snapshot_messages = [dict(message) for message in snapshot.messages]
             self.recorded_message_uuids = {
                 str(message.get("uuid"))
                 for message in self._snapshot_messages
@@ -690,7 +392,7 @@ class SessionStorage:
             self.pending_entries.clear()
 
     def _ensure_transcript_materialized(self) -> None:
-        """Materialize the transcript file for metadata-only compatibility paths."""
+        """为仅含元数据的兼容路径生成实例化副本文件"""
         if self.session_file is None:
             self.materialize_session_file()
 
@@ -760,18 +462,8 @@ class SessionStorage:
             return
 
         # 序列化为 JSON 并追加换行
-        if hasattr(entry, 'model_dump'):
-            # Pydantic 模型
-            line = json.dumps(
-                _legacy_compatible_entry_payload(entry.model_dump()),
-                ensure_ascii=False,
-            ) + "\n"
-        else:
-            # 普通字典
-            line = json.dumps(
-                _legacy_compatible_entry_payload(entry),
-                ensure_ascii=False,
-            ) + "\n"
+        data = entry.model_dump() if hasattr(entry, 'model_dump') else entry
+        line = json.dumps(data, ensure_ascii=False) + "\n"
 
         # 追加写入文件
         with open(self.session_file, "a", encoding="utf-8") as f:
@@ -822,7 +514,7 @@ class SessionStorage:
                 line = line.strip()
                 if not line:
                     continue
-                try:
+                try: #把 JSON 格式的字符串，自动转换成对应的 Pydantic 模型对象
                     events.append(SessionEvent.model_validate_json(line))
                 except Exception:
                     continue
@@ -830,10 +522,7 @@ class SessionStorage:
 
     def load_events(self) -> List[SessionEvent]:
         """加载当前会话的事件日志。"""
-        events = self._load_events_from_disk()
-        if not events and self._migrate_legacy_transcript_if_needed():
-            events = self._load_events_from_disk()
-        return events
+        return self._load_events_from_disk()
 
     def save_snapshot(self) -> SessionSnapshot:
         """把当前消息与元数据物化为 snapshot。"""
@@ -863,7 +552,7 @@ class SessionStorage:
             ]
             metadata = loaded_from_events.metadata
         else:
-            snapshot_messages = _sanitize_snapshot_messages(self._snapshot_messages)
+            snapshot_messages = self._snapshot_messages
             metadata = SessionMetadata(
                 session_id=self.session_id,
                 custom_title=self.current_title,
@@ -889,29 +578,14 @@ class SessionStorage:
         return snapshot
 
     def load_snapshot(self) -> Optional[SessionSnapshot]:
-        """读取当前 snapshot；不存在时返回 None。"""
+        """读取当前 snapshot；不存在或损坏时返回 None。"""
         if not self.snapshot_file.exists():
-            if not self._migrate_legacy_transcript_if_needed():
-                return None
-        try:
-            with open(self.snapshot_file, "r", encoding="utf-8") as f:
-                payload = json.load(f)
-        except Exception:
             return None
-        try:
-            return SessionSnapshot.model_validate(payload)
-        except Exception:
-            if not isinstance(payload, dict):
-                return None
-            return SessionSnapshot(
-                session_id=str(payload.get("session_id", "") or self.session_id),
-                messages=_sanitize_snapshot_messages(payload.get("messages")),
-                runtime_state=dict(payload.get("runtime_state", {}) or {}),
-                metadata=_safe_metadata_from_payload(self.session_id, payload.get("metadata")),
-                last_event_id=payload.get("last_event_id"),
-                created_at=payload.get("created_at"),
-                updated_at=payload.get("updated_at"),
-            )
+        with open(self.snapshot_file, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
+            payload["messages"] = [msg for msg in payload["messages"] if isinstance(msg, dict) and msg.get("uuid")]
+        return SessionSnapshot.model_validate(payload)
 
     def load_runtime_state(self) -> Dict[str, Any]:
         """加载派生的运行时状态（todo/checkpoint/agent replay 等）。"""
@@ -1072,16 +746,12 @@ class SessionStorage:
         """
         self._ensure_transcript_materialized()
         self.current_title = title
-        # 根据来源选择元数据类型
         metadata_type = "custom-title" if source == "user" else "ai-title"
         entry = {
             "type": metadata_type,
-            "title": title,  # 兼容旧字段
             "custom_title": title,
-            "customTitle": title,  # 兼容两种字段名
             "source": source,
             "session_id": self.session_id,
-            "sessionId": self.session_id,
             "timestamp": datetime.now().isoformat(),
         }
         self._append_entry_to_file(entry)
@@ -1151,11 +821,11 @@ class SessionStorage:
                                         text += "…"
                                     info["first_prompt"] = text
                         elif record_type == "custom-title":
-                            title = record.get("title") or record.get("customTitle") or record.get("custom_title")
+                            title = record.get("custom_title")
                             if title:
                                 info["user_title"] = title
                         elif record_type == "ai-title":
-                            title = record.get("title") or record.get("customTitle") or record.get("custom_title")
+                            title = record.get("custom_title")
                             if title:
                                 info["ai_title"] = title
                     except Exception:
@@ -1183,12 +853,11 @@ class SessionStorage:
         }
 
     def save_metadata(self, metadata_type: str, data: Dict[str, Any]) -> None:
-        """Compatibility generic metadata writer used by older session helpers/tests."""
+        """通用元数据写入。"""
         self._ensure_transcript_materialized()
         entry = {
             "type": metadata_type,
             "session_id": self.session_id,
-            "sessionId": self.session_id,
             "timestamp": datetime.now().isoformat(),
             **data,
         }
@@ -1242,30 +911,26 @@ class SessionStorage:
         self.save_snapshot()
 
     def save_agent_setting(self, agent_setting: str) -> None:
-        """Compatibility helper for persisting agent-setting transcript entries."""
-        self.save_metadata("agent-setting", {"agentSetting": agent_setting, "agentType": agent_setting})
+        self.save_metadata("agent-setting", {"agent_setting": agent_setting, "agent_type": agent_setting})
 
     def save_summary(self, summary: str, leaf_uuid: Optional[str] = None) -> None:
-        """Compatibility helper for summary transcript entries."""
         payload: Dict[str, Any] = {"summary": summary}
         if leaf_uuid:
-            payload["leafUuid"] = leaf_uuid
+            payload["leaf_uuid"] = leaf_uuid
         self.save_metadata("summary", payload)
 
     def save_pr_link(self, pr_number: int, pr_url: str, pr_repository: str) -> None:
-        """Compatibility helper for PR link transcript entries."""
         self.save_metadata(
             "pr-link",
             {
-                "prNumber": pr_number,
-                "prUrl": pr_url,
-                "prRepository": pr_repository,
+                "pr_number": pr_number,
+                "pr_url": pr_url,
+                "pr_repository": pr_repository,
             },
         )
 
     def save_worktree_state(self, worktree_session: Optional[Dict[str, Any]]) -> None:
-        """Compatibility helper for worktree-state transcript entries."""
-        self.save_metadata("worktree-state", {"worktreeSession": worktree_session})
+        self.save_metadata("worktree-state", {"worktree_session": worktree_session})
 
     def save_mode(self, mode: str) -> None:
         """
@@ -1280,7 +945,6 @@ class SessionStorage:
             "type": "mode",
             "mode": mode,
             "session_id": self.session_id,
-            "sessionId": self.session_id,
             "timestamp": datetime.now().isoformat(),
         })
         self.append_event("metadata_updated", {"mode": mode})
@@ -1433,15 +1097,10 @@ def load_session_from_events(
         payload = dict(event.payload or {})
         if event.event_type == "message_recorded":
             raw_message = payload.get("message")
-            normalized = _normalize_message_record(
-                raw_message,
-                fallback_parent_uuid=payload.get("parent_uuid"),
-                fallback_timestamp=event.created_at,
-            )
-            if normalized is None:
+            if not isinstance(raw_message, dict) or not raw_message.get("uuid"):
                 continue
             try:
-                message = TranscriptMessage.model_validate(normalized)
+                message = TranscriptMessage.model_validate(raw_message)
             except Exception:
                 continue
             if message.uuid not in message_map:
@@ -1506,7 +1165,7 @@ def build_runtime_state_from_events(events: List[SessionEvent]) -> Dict[str, Any
                 items = payload.get("items", [])
                 todos[key] = [dict(item) for item in items if isinstance(item, dict)]
         elif event_type == "permission_mode_changed":
-            permission_mode = payload.get("permission_mode") or payload.get("mode")
+            permission_mode = payload.get("permission_mode") or payload.get("mode") # 这里为什么会有or就是定义的时候没定义好
             if permission_mode is not None:
                 runtime_state["permission_mode"] = str(permission_mode)
         elif event_type == "interaction_requested":
@@ -1590,10 +1249,7 @@ def load_session_from_file(
                 # 处理不同类型的条目
                 if entry_type in ("user", "assistant"):
                     # Transcript 消息
-                    normalized = _normalize_message_record(entry)
-                    if normalized is None:
-                        continue
-                    msg = TranscriptMessage.model_validate(normalized)
+                    msg = TranscriptMessage.model_validate(entry)
                     messages.append(msg)
 
                     # 记录叶子节点（没有子节点的消息）
@@ -1602,26 +1258,22 @@ def load_session_from_file(
                     leaf_uuids.add(msg.uuid)
 
                 elif entry_type == "custom-title":
-                    metadata.custom_title = (
-                        entry.get("custom_title")
-                        or entry.get("customTitle")
-                        or entry.get("title")
-                    )
+                    metadata.custom_title = entry.get("custom_title")
 
                 elif entry_type == "tag":
                     metadata.tag = entry.get("tag")
 
                 elif entry_type == "agent-name":
-                    metadata.agent_name = entry.get("agent_name") or entry.get("agentName")
+                    metadata.agent_name = entry.get("agent_name")
 
                 elif entry_type == "agent-color":
-                    metadata.agent_color = entry.get("agent_color") or entry.get("agentColor")
+                    metadata.agent_color = entry.get("agent_color")
 
                 elif entry_type == "mode":
                     metadata.mode = entry.get("mode")
 
                 elif entry_type == "last-prompt":
-                    metadata.last_prompt = entry.get("last_prompt") or entry.get("lastPrompt")
+                    metadata.last_prompt = entry.get("last_prompt")
 
                 elif entry_type == "content-replacement":
                     content_replacements.extend(entry.get("replacements", []))

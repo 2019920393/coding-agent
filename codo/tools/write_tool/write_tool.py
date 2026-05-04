@@ -31,15 +31,18 @@ class WriteToolOutput(BaseModel):
 
 class WriteTool(Tool[WriteToolInput, WriteToolOutput, None]):
     def __init__(self):
+        """初始化 WriteTool，设置工具名称和最大结果大小。"""
         self.name = "Write"
         self.max_result_size_chars = 100000
 
     @property
     def input_schema(self) -> type[WriteToolInput]:
+        """返回输入 schema 类 WriteToolInput。"""
         return WriteToolInput
 
     @property
     def output_schema(self) -> type[WriteToolOutput]:
+        """返回输出 schema 类 WriteToolOutput。"""
         return WriteToolOutput
 
     async def description(self, input_data: WriteToolInput, options: dict) -> str:
@@ -76,6 +79,12 @@ class WriteTool(Tool[WriteToolInput, WriteToolOutput, None]):
         )
 
     def map_tool_result_to_tool_result_block_param(self, content: WriteToolOutput, tool_use_id: str):
+        """
+        将工具结果转换为 API tool_result 消息块格式。
+
+        返回:
+            dict: 如 {"type": "tool_result", "tool_use_id": "...", "content": "create: /path/to/file.py"}
+        """
         return {
             "type": "tool_result",
             "tool_use_id": tool_use_id,
@@ -83,15 +92,19 @@ class WriteTool(Tool[WriteToolInput, WriteToolOutput, None]):
         }
 
     def user_facing_name(self) -> str:
+        """返回用户可见的工具名称（中文）。"""
         return "写入文件"
 
     def is_concurrency_safe(self, input_data: WriteToolInput) -> bool:
+        """文件写入不是并发安全的，返回 False。"""
         return False
 
     def is_read_only(self, input_data: WriteToolInput) -> bool:
+        """文件写入不是只读操作，返回 False。"""
         return False
 
     async def validate_input(self, input_data: WriteToolInput, context: ToolUseContext) -> ValidationResult:
+        """验证文件路径必须是绝对路径。"""
         if not os.path.isabs(input_data.file_path):
             return ValidationResult(result=False, message='文件路径必须是绝对路径')
         return ValidationResult(result=True)
@@ -104,6 +117,18 @@ class WriteTool(Tool[WriteToolInput, WriteToolOutput, None]):
         parent_message: Any,
         on_progress: Optional[Callable] = None
     ) -> ToolResult[WriteToolOutput]:
+        """
+        写入文件（创建或完全覆盖）。
+
+        [Workflow]
+        1. 检查文件是否已存在（区分 create/update）
+        2. 若已存在，读取原始内容生成 unified diff
+        3. 构建 ProposedFileChange（待审阅变更）
+        4. 返回 ToolResult（含 DiffReceipt 和 staged_changes）
+
+        返回:
+            ToolResult[WriteToolOutput]: 包含操作类型（create/update）、文件路径和 diff
+        """
         file_path = expandPath(input_data.file_path)
         fs = getFsImplementation()
 

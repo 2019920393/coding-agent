@@ -162,7 +162,7 @@ class InputHistory:
                         },
                         'timestamp': entry.timestamp,
                         'project': entry.project,
-                        'sessionId': entry.session_id
+                        'session_id': entry.session_id
                     }
                     f.write(json.dumps(entry_dict) + '\n')
 
@@ -361,7 +361,7 @@ class InputHistory:
             pasted_contents=pasted_contents,
             timestamp=entry_dict['timestamp'],
             project=entry_dict['project'],
-            session_id=entry_dict.get('sessionId')
+            session_id=entry_dict.get('session_id')
         )
 
     def _log_entry_to_history_entry(self, entry: LogEntry) -> HistoryEntry:

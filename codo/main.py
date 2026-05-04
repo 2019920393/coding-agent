@@ -37,24 +37,71 @@ load_dotenv()
 VERSION = "0.1.0"
 
 def _list_runtime_sessions(cwd: str) -> List[Dict[str, Any]]:
+    """
+    列出指定工作目录下所有可用的运行时会话。
+
+    [Workflow]
+    1. 定位会话目录（~/.codo/sessions/<cwd_hash>/）
+    2. 遍历所有 .jsonl 文件，跳过事件日志文件（*.events.jsonl）
+    3. 对每个文件创建 SessionStorage 并读取会话元信息
+    4. 过滤掉不存在的会话，按修改时间倒序排列
+
+    参数:
+        cwd: 当前工作目录路径
+
+    返回:
+        # 示例：
+        [
+            {
+                "session_id": "a1b2c3d4-...",
+                "exists": True,
+                "modified": "2024-01-15T10:30:00",
+                "message_count": 42,
+                "first_prompt": "帮我写一个排序算法",
+                "user_title": None,
+                "ai_title": "排序算法实现讨论",
+            },
+            ...
+        ]
+    """
     directory = Path(get_runtime_sessions_dir(cwd))
     if not directory.exists():
         return []
 
     sessions: List[Dict[str, Any]] = []
     for session_file in directory.glob("*.jsonl"):
+        # 跳过事件日志文件，只处理主会话文件
         if session_file.name.endswith(".events.jsonl"):
             continue
-        session_id = session_file.stem
+        session_id = session_file.stem  # 文件名（不含扩展名）即为 session_id
         storage = RuntimeSessionStorage(session_id, cwd)
         info = storage.get_session_info()
+        # 只保留实际存在的会话（防止空文件或损坏文件干扰）
         if info.get("exists"):
             sessions.append(info)
 
+    # 按修改时间倒序排列，最近的会话排在最前面
     sessions.sort(key=lambda item: item.get("modified") or "", reverse=True)
     return sessions
 
 def _runtime_session_title(info: Dict[str, Any]) -> str:
+    """
+    从会话元信息中提取可读标题。
+
+    优先级：user_title > ai_title > first_prompt > 空字符串
+
+    参数:
+        info: 会话元信息字典，结构如：
+            {
+                "session_id": "a1b2c3d4-...",
+                "user_title": None,
+                "ai_title": "排序算法实现讨论",
+                "first_prompt": "帮我写一个排序算法",
+            }
+
+    返回:
+        str: 会话标题，如 "排序算法实现讨论"，若无任何标题则返回 ""
+    """
     return str(
         info.get("user_title")
         or info.get("ai_title")
@@ -63,40 +110,70 @@ def _runtime_session_title(info: Dict[str, Any]) -> str:
     ).strip()
 
 def _search_runtime_sessions(query: str, cwd: str, *, exact: bool = False) -> List[Dict[str, Any]]:
-    normalized = str(query or "").strip().lower()
+    """
+    按关键词搜索会话列表。
+
+    [Workflow]
+    1. 规范化搜索词（去空格、转小写）
+    2. 若搜索词为空，直接返回全部会话
+    3. 对每个会话构建可搜索字段（session_id、标题、首条 prompt）
+    4. 根据 exact 参数决定精确匹配还是模糊包含匹配
+    5. 返回命中的会话列表
+
+    参数:
+        query: 搜索关键词（支持 session_id、标题、首条 prompt）
+        cwd: 当前工作目录
+        exact: True 表示精确匹配，False 表示模糊包含匹配
+
+    返回:
+        # 示例（模糊搜索 "排序"）：
+        [
+            {
+                "session_id": "a1b2c3d4-...",
+                "ai_title": "排序算法实现讨论",
+                "first_prompt": "帮我写一个排序算法",
+                ...
+            }
+        ]
+    """
+    normalized = str(query or "").strip().lower()  # 统一转小写，便于大小写不敏感匹配
     if not normalized:
+        # 搜索词为空时返回全部会话，等同于 list
         return _list_runtime_sessions(cwd)
 
     matches: List[Dict[str, Any]] = []
     for info in _list_runtime_sessions(cwd):
+        # 构建可搜索字段列表：session_id、标题、首条 prompt
         searchable = [
             str(info.get("session_id", "") or "").strip(),
             _runtime_session_title(info),
             str(info.get("first_prompt", "") or "").strip(),
         ]
-        lowered = [item.lower() for item in searchable if item]
+        lowered = [item.lower() for item in searchable if item]  # 过滤空字符串并转小写
         if exact:
+            # 精确匹配：任意字段完全等于搜索词
             if any(item == normalized for item in lowered):
                 matches.append(info)
         else:
+            # 模糊匹配：任意字段包含搜索词
             if any(normalized in item for item in lowered):
                 matches.append(info)
     return matches
 
 def _print_error(message: str) -> None:
-    """输出错误信息。"""
+    """输出红色错误信息到 stderr。"""
     click.secho(message, fg="red", err=True)
 
 def _print_warning(message: str) -> None:
-    """输出警告或中断信息。"""
+    """输出黄色警告或中断信息到 stderr。"""
     click.secho(message, fg="yellow", err=True)
 
 def _print_dim(message: str) -> None:
-    """输出弱提示信息。"""
+    """输出灰色弱提示信息到 stdout。"""
     click.secho(message, fg="bright_black")
 
 def _print_traceback(message: str) -> None:
-    """输出调试堆栈。"""
+    """输出调试堆栈信息到 stderr。"""
     click.echo(message, err=True)
 
 def main() -> None:
@@ -222,9 +299,13 @@ def cli(
 
 def _run_async(coro):
     """
-    运行异步协程
+    在新的事件循环中运行异步协程（同步入口）。
 
-    直接使用 asyncio.run() 创建新的事件循环
+    用于将 async 函数桥接到 click 的同步命令处理器中。
+    直接使用 asyncio.run() 创建新的事件循环，不复用已有循环。
+
+    参数:
+        coro: 待执行的异步协程对象，如 run_repl(...)
     """
     asyncio.run(coro)
 
@@ -370,6 +451,17 @@ async def run_repl_with_history(
 ) -> None:
     """
     兼容旧接口：直接启动新的 Textual UI，并传入历史消息。
+
+    参数:
+        api_key: Anthropic API 密钥
+        initial_messages: 预加载的历史消息列表，格式如：
+            [
+                {"role": "user", "content": "你好", "uuid": "msg_001"},
+                {"role": "assistant", "content": [{"type": "text", "text": "你好！"}], "uuid": "msg_002"},
+            ]
+        verbose: 是否输出详细日志
+        model: 模型名称，如 "claude-opus-4-20250514"
+        base_url: 可选的自定义 API base URL
     """
     await launch_textual_app(
         api_key=api_key,
@@ -420,7 +512,26 @@ async def launch_textual_app(
     initial_messages: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """
-    创建并运行 Textual UI。
+    创建 QueryEngine 和 UIBridge，然后运行 Textual UI 应用。
+
+    [Workflow]
+    1. 实例化 QueryEngine（携带 API 客户端、模型、会话配置）
+    2. 若指定了 session_id 且无预加载消息，则从磁盘恢复会话历史
+    3. 创建 UIBridge 将引擎状态桥接到 Textual UI
+    4. 创建 TextualChatApp 并异步运行
+
+    参数:
+        api_key: Anthropic API 密钥
+        verbose: 是否输出详细调试日志
+        model: 模型名称，默认 "claude-opus-4-20250514"
+        base_url: 可选的自定义 API base URL
+        thinking_config: Extended Thinking 配置，如：
+            {"type": "enabled", "budget_tokens": 10000}
+            None 表示禁用
+        session_id: 要恢复的会话 ID（UUID 字符串），None 表示新建会话
+        initial_prompt: 启动后自动发送的首条消息
+        initial_session_query: 会话选择器的初始搜索词
+        initial_messages: 预加载的历史消息列表（优先级高于 session_id 恢复）
     """
     engine = QueryEngine(
         api_key=api_key,
@@ -434,15 +545,18 @@ async def launch_textual_app(
         thinking_config=thinking_config,
     )
 
+    # 若指定了 session_id 且没有预加载消息，则从磁盘恢复历史
     if session_id and not initial_messages:
         engine.restore_session()
 
+    # 创建 UIBridge，将引擎事件流桥接到 Textual 响应式 UI
     bridge = UIBridge(engine)
     app = TextualChatApp(
         bridge=bridge,
         initial_prompt=initial_prompt,
         initial_session_query=initial_session_query,
     )
+    # 异步运行 Textual 应用，阻塞直到用户退出
     await app.run_async()
 
 # 如果直接运行此文件（不太可能，因为应该通过 __main__.py 启动）

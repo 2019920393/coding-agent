@@ -42,15 +42,18 @@ class ReadTool(Tool[ReadToolInput, ReadToolOutput, None]):
     """文件读取工具"""
 
     def __init__(self):
+        """初始化 ReadTool，设置工具名称和无限制的结果大小（防止读取结果被持久化）。"""
         self.name = READ_TOOL_NAME
         self.max_result_size_chars = float('inf')  # Infinity - 防止读取结果被持久化（避免循环）
 
     @property
     def input_schema(self) -> type[ReadToolInput]:
+        """返回输入 schema 类 ReadToolInput。"""
         return ReadToolInput
 
     @property
     def output_schema(self) -> type[ReadToolOutput]:
+        """返回输出 schema 类 ReadToolOutput。"""
         return ReadToolOutput
 
     async def description(self, input_data: ReadToolInput, options: dict) -> str:
@@ -107,6 +110,17 @@ class ReadTool(Tool[ReadToolInput, ReadToolOutput, None]):
         )
 
     def map_tool_result_to_tool_result_block_param(self, content: ReadToolOutput, tool_use_id: str):
+        """
+        将工具结果转换为 API tool_result 消息块格式。
+
+        参数:
+            content: 文件读取结果，包含带行号的文件内容
+            tool_use_id: 对应的工具调用 ID
+
+        返回:
+            dict: API 格式的 tool_result 块，如：
+                {"type": "tool_result", "tool_use_id": "toolu_abc", "content": "1\t#!/usr/bin/env python\n..."}
+        """
         return {
             "type": "tool_result",
             "tool_use_id": tool_use_id,

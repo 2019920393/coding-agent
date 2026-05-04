@@ -113,8 +113,8 @@ def test_extract_agent_setting_from_transcript():
     records = [
         {
             "type": "agent-setting",
-            "sessionId": "test-session",
-            "agentType": "explore",
+            "session_id": "test-session",
+            "agent_type": "explore",
             "timestamp": "2024-01-01T00:00:00Z",
         },
         {
@@ -125,8 +125,8 @@ def test_extract_agent_setting_from_transcript():
         },
         {
             "type": "agent-setting",
-            "sessionId": "test-session",
-            "agentType": "code-reviewer",
+            "session_id": "test-session",
+            "agent_type": "code-reviewer",
             "timestamp": "2024-01-01T00:01:00Z",
         },
     ]
@@ -154,34 +154,34 @@ def test_extract_metadata_from_transcript():
     records = [
         {
             "type": "custom-title",
-            "sessionId": session_id,
-            "customTitle": "My Custom Title",
+            "session_id": session_id,
+            "custom_title": "My Custom Title",
             "source": "user",
         },
         {
             "type": "tag",
-            "sessionId": session_id,
+            "session_id": session_id,
             "tag": "bug-fix",
         },
         {
             "type": "summary",
-            "sessionId": session_id,
+            "session_id": session_id,
             "summary": "Fixed authentication bug",
-            "leafUuid": leaf_uuid,
+            "leaf_uuid": leaf_uuid,
         },
         {
             "type": "agent-name",
-            "sessionId": session_id,
-            "agentName": "code-reviewer",
+            "session_id": session_id,
+            "agent_name": "code-reviewer",
         },
         {
             "type": "agent-color",
-            "sessionId": session_id,
-            "agentColor": "#FF5733",
+            "session_id": session_id,
+            "agent_color": "#FF5733",
         },
         {
             "type": "mode",
-            "sessionId": session_id,
+            "session_id": session_id,
             "mode": "plan",
         },
     ]
@@ -256,13 +256,12 @@ def test_full_session_restore_workflow():
             session.save_agent_name("code-reviewer")
             session.save_mode("plan")
 
-            # 保存 agent-setting（注意：这里需要直接写入，因为没有专门的方法）
-            session.save_metadata("agent-setting", {"agentType": "explore"})
+            # 保存 agent-setting
+            session.save_metadata("agent-setting", {"agent_type": "explore"})
 
             # 步骤 2: 模拟会话恢复
-            # 需要 mock session_query 和 session_storage 模块
             with patch('codo.session.restore.find_session_by_id') as mock_find:
-                with patch('codo.session.restore.resolve_session_file_path') as mock_resolve:
+                with patch('codo.session.restore.get_session_file_path') as mock_resolve:
                     # Mock 返回值
                     from codo.session.types import SessionInfo
                     import time
@@ -274,7 +273,7 @@ def test_full_session_restore_workflow():
                         custom_title="Test Session",
                         cwd="/test/path",
                     )
-                    mock_resolve.return_value = str(session.session_file)
+                    mock_resolve.return_value = session.session_file
 
                     # 加载会话
                     resume_data = load_session_for_resume(session_id, "/test/path")

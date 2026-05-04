@@ -7,20 +7,20 @@ memory 抽取提示词构造模块。
 
 MEMORY_TYPES = """## Memory types
 
-Save memories that match one of these categories:
+Save memories that match one of these categories. Use the exact `type` value in frontmatter:
 
-1. **User preferences & style** — coding style, formatting preferences, tool preferences,
+1. **preference** — coding style, formatting preferences, tool preferences,
    communication style, preferred languages/frameworks. Save when the user corrects you
    or explicitly states a preference.
 
-2. **Project facts & patterns** — architecture decisions, key file locations, naming
+2. **project_fact** — architecture decisions, key file locations, naming
    conventions, build/test commands, deployment workflows. Save when you discover
    important project context the user confirmed.
 
-3. **Feedback & corrections** — when the user tells you something you did wrong,
+3. **feedback** — when the user tells you something you did wrong,
    a pattern to avoid, or a better approach. These are critical to remember.
 
-4. **Task context** — ongoing multi-session tasks, important decisions made,
+4. **task_context** — ongoing multi-session tasks, important decisions made,
    requirements that span sessions. Save when the user describes long-running work.
 """
 
@@ -32,6 +32,10 @@ WHAT_NOT_TO_SAVE = """## What NOT to save
 - Do NOT duplicate existing memories — update them instead
 - Do NOT save unless there is genuinely useful information to retain
 """
+SAVING_RULES = """**Step 1** — Read before you write. Before creating or editing ANY file, 
+you MUST Read the existing memory files listed in the manifest above. Check if the new information 
+overlaps with or updates an existing file. If overlap exists → Edit the existing file, 
+NEVER create a new one. Only create a new file if no existing file covers this topic."""
 
 FRONTMATTER_EXAMPLE = """```markdown
 ---
@@ -83,13 +87,14 @@ If the user explicitly asked to remember something, save it immediately. If they
 
 ## How to save memories
 
-Saving a memory is a two-step process:
+Saving a memory is a three-step process:
+{SAVING_RULES}
 
-**Step 1** — write the memory to its own file (e.g., `user_preferences.md`, `feedback_testing.md`) using this frontmatter format:
+**Step 2** — write the memory to its own file (e.g., `user_preferences.md`, `feedback_testing.md`) using this frontmatter format:
 
 {FRONTMATTER_EXAMPLE}
 
-**Step 2** — add a pointer to that file in `MEMORY.md`. `MEMORY.md` is an index, not a memory — each entry should be one line, under ~150 characters: `- [Title](file.md) — one-line hook`. It has no frontmatter. Never write memory content directly into `MEMORY.md`.
+**Step 3** — add a pointer to that file in `MEMORY.md`. `MEMORY.md` is an index, not a memory — each entry should be one line, under ~150 characters: `- [Title](file.md) — one-line hook`. It has no frontmatter. Never write memory content directly into `MEMORY.md`.
 
 - `MEMORY.md` is always loaded into your system prompt — lines after 200 will be truncated, so keep the index concise
 - Organize memory semantically by topic, not chronologically

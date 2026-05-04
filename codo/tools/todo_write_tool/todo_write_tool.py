@@ -14,21 +14,26 @@ class TodoWriteTool(Tool[TodoWriteInput, TodoWriteOutput, None]):
     """
 
     def __init__(self):
+        """初始化 TodoWriteTool，设置工具名称和最大结果大小。"""
         self.name = TODO_WRITE_TOOL_NAME
         self.max_result_size_chars = 100_000
 
     @property
     def input_schema(self) -> type[TodoWriteInput]:
+        """返回输入 schema 类 TodoWriteInput。"""
         return TodoWriteInput
 
     @property
     def output_schema(self) -> type[TodoWriteOutput]:
+        """返回输出 schema 类 TodoWriteOutput。"""
         return TodoWriteOutput
 
     async def description(self, input_data: TodoWriteInput, options: Dict[str, Any]) -> str:
+        """返回工具简短描述。"""
         return DESCRIPTION
 
     async def prompt(self, options: Dict[str, Any]) -> str:
+        """返回系统提示词中的工具描述。"""
         return PROMPT
 
     async def validate_input(

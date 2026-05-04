@@ -16,24 +16,23 @@ ALL_AGENT_DISALLOWED_TOOLS: Set[str] = {
     "Agent",  # 防止子代理递归生成子代理
 }
 
-def filter_tools_for_agent(
-    tools: list,
-    agent_def: AgentDefinition,
-) -> list:
+
+def filter_tools_for_agent(tools: list, agent_def: AgentDefinition) -> list:
     """
-    过滤子代理可用的工具
+    根据代理定义过滤可用工具列表。
 
-    规则：
-    1. ALL_AGENT_DISALLOWED_TOOLS 中的工具对所有子代理禁止
-    2. agent_def.disallowed_tools 中的工具对该代理禁止
-    3. MCP 工具（以 mcp__ 开头）允许通过
+    [Workflow]
+    1. 合并 agent_def.disallowed_tools 和全局黑名单 ALL_AGENT_DISALLOWED_TOOLS
+    2. MCP 工具（名称以 "mcp__" 开头）始终允许，跳过过滤
+    3. 黑名单中的工具直接排除
+    4. 若 agent_def.tools 不为 None，只保留白名单中的工具
 
-    Args:
-        tools: 父代理的工具列表
-        agent_def: 代理定义
+    参数:
+        tools: 全量工具列表
+        agent_def: 代理定义，包含 tools（白名单）和 disallowed_tools（黑名单）
 
-    Returns:
-        过滤后的工具列表
+    返回:
+        list: 过滤后的工具列表，如 [bash_tool, read_tool, grep_tool]
     """
     disallowed = set(agent_def.disallowed_tools) | ALL_AGENT_DISALLOWED_TOOLS
 
@@ -46,13 +45,18 @@ def filter_tools_for_agent(
             result.append(tool)
             continue
 
-        # 检查是否在禁止列表中
+        # 黑名单过滤
         if tool_name in disallowed:
+            continue
+
+        # 白名单过滤：如果 agent_def 指定了 tools，只保留白名单里的
+        if agent_def.tools is not None and tool_name not in agent_def.tools:
             continue
 
         result.append(tool)
 
     return result
+
 
 def extract_final_text(messages: list) -> str:
     """

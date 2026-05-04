@@ -32,6 +32,7 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
     """Bash 命令执行工具"""
 
     def __init__(self):
+        """初始化 BashTool，设置工具名称和最大结果大小。"""
         self.name = BASH_TOOL_NAME
         self.max_result_size_chars = 30000  # 30K chars - Bash 输出通常较大
 
@@ -185,6 +186,12 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
                 )
 
                 async def execute_in_background() -> dict:
+                    """
+                    后台任务协程：在独立任务中执行命令并返回结构化结果字典。
+
+                    返回:
+                        dict: 包含 command、stdout、stderr、exitCode、durationMs 等字段
+                    """
                     return await self._run_background_command(
                         command=command,
                         cwd=cwd,
@@ -431,6 +438,15 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
 
             # 返回修改函数
             def modify_context(ctx: dict) -> dict:
+                """
+                上下文修改函数：将工作目录更新为 cd 命令的目标路径。
+
+                参数:
+                    ctx: 当前执行上下文字典
+
+                返回:
+                    dict: 更新了 cwd 字段的新上下文字典，如 {"cwd": "/new/path", ...}
+                """
                 new_ctx = ctx.copy()
                 new_ctx['cwd'] = target_dir
                 return new_ctx

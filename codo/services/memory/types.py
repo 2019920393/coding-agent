@@ -6,21 +6,15 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 MemoryType = Literal[
-    "user",
-    "feedback",
-    "project",
-    "reference",
     "preference",
+    "feedback",
     "project_fact",
     "task_context",
 ]
 
 MEMORY_TYPES = [
-    "user",
-    "feedback",
-    "project",
-    "reference",
     "preference",
+    "feedback",
     "project_fact",
     "task_context",
 ]

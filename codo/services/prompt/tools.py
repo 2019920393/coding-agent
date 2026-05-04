@@ -63,7 +63,7 @@ class PydanticToJsonSchemaConverter:
 
 async def tool_to_api_schema(tool: Tool, options: Dict[str, Any] = None) -> Dict[str, Any]:
     """
-    将工具转换为 ?? API 格式的 schema
+    将工具转换为 anthropic API 格式的 schema
 
     [Workflow]
     1. 获取工具名称
@@ -85,7 +85,7 @@ async def tool_to_api_schema(tool: Tool, options: Dict[str, Any] = None) -> Dict
     # 生成工具描述
     if options is None:
         options = {}
-    description = await tool.prompt(options)
+    description = await tool.prompt(options)  # 所有工具实例都实现了这个prompt方法 给llm看的工具使用说明
 
     # 转换输入 schema
     if tool.input_schema:
@@ -97,7 +97,7 @@ async def tool_to_api_schema(tool: Tool, options: Dict[str, Any] = None) -> Dict
             "properties": {},
         }
 
-    # 组装为 ?? API 格式
+    # 组装为 anthropic API 格式
     schema = {
         "name": name,
         "description": description,
@@ -115,7 +115,7 @@ async def tools_to_api_schemas(
     agents: Optional[List[Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    将工具列表转换为 ?? API 格式的 schema 列表
+    将工具列表转换为 anthropic API 格式的 schema 列表
 
     [Workflow]
     1. 遍历所有工具
@@ -127,7 +127,7 @@ async def tools_to_api_schemas(
         agents: 可用的 agent 定义列表（传递给 AgentTool.prompt()）
 
     Returns:
-        ?? API 格式的工具 schema 列表
+         API 格式的工具 schema 列表
     """
     if not tools:
         return []

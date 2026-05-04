@@ -41,7 +41,7 @@ class RuntimeCommand:
     payload: dict[str, Any] = field(default_factory=dict)
 
 class QueryRuntimeController:
-    """Bidirectional runtime bridge between query execution and Textual UI."""
+    """查询与UI界面的桥接."""
 
     _SENTINEL = object()
     _COMMAND_SENTINEL = object()
@@ -58,7 +58,10 @@ class QueryRuntimeController:
 
     async def emit_runtime_event(self, event_type: str, **payload: Any) -> None:
         await self.emit(RuntimeEvent(type=event_type, payload=payload))
+#往两个队列各放一个哨兵：
 
+#_events 队列：告诉 UI "事件流结束了"
+#_commands 队列：告诉命令泵 "不用再监听了"
     async def finish(self) -> None:
         await self._events.put(self._SENTINEL)
         await self._commands.put(self._COMMAND_SENTINEL)

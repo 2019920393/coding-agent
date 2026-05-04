@@ -6,8 +6,9 @@ from pathlib import Path
 
 from codo.services.memory import (
     MemoryManager,
-    MemoryScanner,
-    MemoryLoader,
+    scan_memory_files,
+    format_memory_manifest,
+    load_memory_index,
     get_auto_memory_path,
     sanitize_filename,
 )
@@ -29,7 +30,7 @@ class TestMemoryManager:
         file_path = manager.create_memory(
             name="User Role",
             description="User is a senior Go engineer",
-            memory_type="user",
+            memory_type="preference",
             content="The user has 10+ years of Go experience.",
             topic="role"
         )
@@ -62,7 +63,7 @@ class TestMemoryManager:
         file_path = manager.create_memory(
             name="Original",
             description="Original description",
-            memory_type="project",
+            memory_type="project_fact",
             content="Original content"
         )
 
@@ -85,7 +86,7 @@ class TestMemoryManager:
         file_path = manager.create_memory(
             name="To Delete",
             description="Will be deleted",
-            memory_type="reference",
+            memory_type="task_context",
             content="Delete me"
         )
 
@@ -97,65 +98,48 @@ class TestMemoryManager:
         assert not Path(file_path).exists()
 
 class TestMemoryScanner:
-    """MemoryScanner 测试套件"""
+    """scan_memory_files 函数测试套件"""
 
     def test_scan_memory_files(self, temp_memory_dir):
         """测试扫描记忆文件"""
         manager = MemoryManager(temp_memory_dir)
-        scanner = MemoryScanner(temp_memory_dir)
 
         # 创建几个记忆文件
-        manager.create_memory("Memory 1", "First memory", "user", "Content 1")
+        manager.create_memory("Memory 1", "First memory", "preference", "Content 1")
         manager.create_memory("Memory 2", "Second memory", "feedback", "Content 2")
-        manager.create_memory("Memory 3", "Third memory", "project", "Content 3")
+        manager.create_memory("Memory 3", "Third memory", "project_fact", "Content 3")
 
-        headers = scanner.scan_memory_files()
+        headers = scan_memory_files(temp_memory_dir)
 
         assert len(headers) == 3
-        assert all(h.name in ["Memory 1", "Memory 2", "Memory 3"] for h in headers)
+        assert all(h.filename for h in headers)
 
     def test_format_memory_manifest(self, temp_memory_dir):
         """测试格式化记忆清单"""
         manager = MemoryManager(temp_memory_dir)
-        scanner = MemoryScanner(temp_memory_dir)
 
-        manager.create_memory("Test", "Test memory", "user", "Content")
+        manager.create_memory("Test", "Test memory", "preference", "Content")
 
-        headers = scanner.scan_memory_files()
-        manifest = scanner.format_memory_manifest(headers)
+        headers = scan_memory_files(temp_memory_dir)
+        manifest = format_memory_manifest(headers)
 
-        assert "[user]" in manifest
+        assert "[preference]" in manifest
         assert "Test memory" in manifest
 
-class TestMemoryLoader:
-    """MemoryLoader 测试套件"""
+class TestMemoryIndex:
+    """load_memory_index 函数测试套件"""
 
     def test_load_memory_index(self, temp_memory_dir):
         """测试加载记忆索引"""
         manager = MemoryManager(temp_memory_dir)
-        loader = MemoryLoader(temp_memory_dir)
 
         # 创建记忆（会自动创建索引）
-        manager.create_memory("Test", "Test memory", "user", "Content")
+        manager.create_memory("Test", "Test memory", "preference", "Content")
 
-        index_content = loader.load_memory_index()
+        index_content = load_memory_index(temp_memory_dir)
 
         assert index_content is not None
-        assert "auto memory" in index_content
         assert "Test" in index_content
-
-    def test_build_memory_context(self, temp_memory_dir):
-        """测试构建记忆上下文"""
-        manager = MemoryManager(temp_memory_dir)
-        loader = MemoryLoader(temp_memory_dir)
-
-        manager.create_memory("User Info", "User details", "user", "Content")
-
-        context = loader.build_memory_context()
-
-        assert "auto memory" in context
-        assert "Types of memory" in context
-        assert "User Info" in context
 
 class TestPaths:
     """路径函数测试套件"""

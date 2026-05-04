@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from codo.session.storage import resolve_session_file_path
+from codo.session.storage import get_session_file_path
 from codo.session.query import find_session_by_id, get_last_session
 from codo.session.types import SessionInfo
 
@@ -141,7 +141,7 @@ def extract_agent_setting_from_transcript(records: List[Dict[str, Any]]) -> Opti
     [Workflow]
     1. 从后往前遍历记录
     2. 查找最后一个 agent-setting 记录
-    3. 提取 agentType 字段
+    3. 提取 agent_type 字段
     4. 返回 agent 类型
 
     Args:
@@ -153,7 +153,7 @@ def extract_agent_setting_from_transcript(records: List[Dict[str, Any]]) -> Opti
     # 从后往前查找最后一个 agent-setting 记录
     for record in reversed(records):
         if record.get('type') == 'agent-setting':
-            agent_type = record.get('agentType')
+            agent_type = record.get('agent_type')
             if agent_type:
                 return agent_type
 
@@ -165,36 +165,13 @@ def extract_metadata_from_transcript(records: List[Dict[str, Any]]) -> Dict[str,
 
     [Workflow]
     1. 遍历所有记录
-    2. 提取各种元数据类型：
-       - summaries: 会话摘要（按 leafUuid 索引）
-       - customTitles: 自定义标题（按 sessionId 索引）
-       - tags: 标签（按 sessionId 索引）
-       - agentNames: Agent 名称（按 sessionId 索引）
-       - agentColors: Agent 颜色（按 sessionId 索引）
-       - agentSettings: Agent 设置（按 sessionId 索引）
-       - modes: 模式（按 sessionId 索引）
-       - prNumbers/prUrls/prRepositories: PR 关联信息
-       - worktreeStates: 工作树状态
-    3. 返回元数据字典
+    2. 提取各种元数据类型
 
     Args:
         records: 会话记录列表
 
     Returns:
         Dict[str, Any]: 元数据字典
-            {
-                "summaries": Dict[str, str],           # leafUuid -> summary
-                "custom_titles": Dict[str, str],       # sessionId -> customTitle
-                "tags": Dict[str, str],                # sessionId -> tag
-                "agent_names": Dict[str, str],         # sessionId -> agentName
-                "agent_colors": Dict[str, str],        # sessionId -> agentColor
-                "agent_settings": Dict[str, str],      # sessionId -> agentSetting
-                "modes": Dict[str, str],               # sessionId -> mode
-                "pr_numbers": Dict[str, int],          # sessionId -> prNumber
-                "pr_urls": Dict[str, str],             # sessionId -> prUrl
-                "pr_repositories": Dict[str, str],     # sessionId -> prRepository
-                "worktree_states": Dict[str, Any],     # sessionId -> worktreeSession
-            }
     """
     metadata = {
         "summaries": {},
@@ -213,68 +190,68 @@ def extract_metadata_from_transcript(records: List[Dict[str, Any]]) -> Dict[str,
     for record in records:
         record_type = record.get('type')
 
-        # 提取 summary (按 leafUuid 索引)
+        # 提取 summary
         if record_type == 'summary':
-            leaf_uuid = record.get('leafUuid')
+            leaf_uuid = record.get('leaf_uuid')
             summary = record.get('summary')
             if leaf_uuid and summary:
                 metadata["summaries"][leaf_uuid] = summary
 
-        # 提取 custom-title (按 sessionId 索引)
+        # 提取 custom-title
         elif record_type == 'custom-title':
-            session_id = record.get('sessionId')
-            custom_title = record.get('customTitle')
+            session_id = record.get('session_id')
+            custom_title = record.get('custom_title')
             if session_id and custom_title:
                 metadata["custom_titles"][session_id] = custom_title
 
-        # 提取 tag (按 sessionId 索引)
+        # 提取 tag
         elif record_type == 'tag':
-            session_id = record.get('sessionId')
+            session_id = record.get('session_id')
             tag = record.get('tag')
             if session_id and tag:
                 metadata["tags"][session_id] = tag
 
-        # 提取 agent-name (按 sessionId 索引)
+        # 提取 agent-name
         elif record_type == 'agent-name':
-            session_id = record.get('sessionId')
-            agent_name = record.get('agentName')
+            session_id = record.get('session_id')
+            agent_name = record.get('agent_name')
             if session_id and agent_name:
                 metadata["agent_names"][session_id] = agent_name
 
-        # 提取 agent-color (按 sessionId 索引)
+        # 提取 agent-color
         elif record_type == 'agent-color':
-            session_id = record.get('sessionId')
-            agent_color = record.get('agentColor')
+            session_id = record.get('session_id')
+            agent_color = record.get('agent_color')
             if session_id and agent_color:
                 metadata["agent_colors"][session_id] = agent_color
 
-        # 提取 agent-setting (按 sessionId 索引)
+        # 提取 agent-setting
         elif record_type == 'agent-setting':
-            session_id = record.get('sessionId')
-            agent_setting = record.get('agentSetting')
+            session_id = record.get('session_id')
+            agent_setting = record.get('agent_setting')
             if session_id and agent_setting:
                 metadata["agent_settings"][session_id] = agent_setting
 
-        # 提取 mode (按 sessionId 索引)
+        # 提取 mode
         elif record_type == 'mode':
-            session_id = record.get('sessionId')
+            session_id = record.get('session_id')
             mode = record.get('mode')
             if session_id and mode:
                 metadata["modes"][session_id] = mode
 
-        # 提取 worktree-state (按 sessionId 索引)
+        # 提取 worktree-state
         elif record_type == 'worktree-state':
-            session_id = record.get('sessionId')
-            worktree_session = record.get('worktreeSession')
+            session_id = record.get('session_id')
+            worktree_session = record.get('worktree_session')
             if session_id:
                 metadata["worktree_states"][session_id] = worktree_session
 
-        # 提取 pr-link (按 sessionId 索引)
+        # 提取 pr-link
         elif record_type == 'pr-link':
-            session_id = record.get('sessionId')
-            pr_number = record.get('prNumber')
-            pr_url = record.get('prUrl')
-            pr_repository = record.get('prRepository')
+            session_id = record.get('session_id')
+            pr_number = record.get('pr_number')
+            pr_url = record.get('pr_url')
+            pr_repository = record.get('pr_repository')
             if session_id:
                 if pr_number is not None:
                     metadata["pr_numbers"][session_id] = pr_number
@@ -333,9 +310,10 @@ def load_session_for_resume(
             return None
 
     # 步骤 2: 解析会话文件路径
-    file_path = resolve_session_file_path(session_info.session_id, project_dir)
-    if not file_path:
+    file_path = get_session_file_path(session_info.session_id, project_dir)
+    if not file_path.exists():
         return None
+    file_path = str(file_path)
 
     # 步骤 3: 加载会话文件
     try:

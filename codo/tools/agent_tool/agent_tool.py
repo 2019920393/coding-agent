@@ -16,9 +16,13 @@ from dataclasses import asdict
 from typing import Optional, Callable, Any, Dict, List, Awaitable
 
 from ..base import Tool, ToolUseContext, build_tool
+
 from ..receipts import AgentReceipt, receipt_to_dict
+
 from ..types import ToolResult, ValidationResult, ToolCallProgress
+
 from .types import AgentToolInput, AgentToolOutput
+
 from .prompt import (
     AGENT_TOOL_NAME,
     DESCRIPTION,
@@ -26,12 +30,29 @@ from .prompt import (
     DEFAULT_AGENT_TYPE,
     get_agent_tool_prompt,
 )
+
 from .agents import AgentDefinition, find_agent_by_type, get_builtin_agents
+
 from .utils import filter_tools_for_agent, extract_final_text
 
 logger = logging.getLogger(__name__)
 
 def _serialize_runtime_value(value: Any) -> Any:
+    """
+    将运行时对象递归序列化为可 JSON 化的基础类型。
+
+    [Workflow]
+    1. dataclass 对象 → asdict() 转换为字典
+    2. list → 递归处理每个元素
+    3. dict → 递归处理每个值
+    4. 其他类型 → 原样返回
+
+    参数:
+        value: 任意运行时对象
+
+    返回:
+        可 JSON 序列化的基础类型（dict/list/str/int/float/bool/None）
+    """
     if hasattr(value, "__dataclass_fields__") and not isinstance(value, type):
         return asdict(value)
     if isinstance(value, list):
@@ -45,9 +66,8 @@ def _serialize_runtime_value(value: Any) -> Any:
     max_result_size_chars=100_000,
     input_schema=AgentToolInput,
     output_schema=AgentToolOutput,
-    aliases=["Task"],
     search_hint="delegate work to a subagent",
-    is_read_only=lambda _: True,      # AgentTool 本身不直接修改文件
+    is_read_only=lambda _: True,      # AgentTool 本身不直接修改文件  #现在的设计是agent 不直接修改文件
     is_concurrency_safe=lambda _: False,  # 子代理对话循环不应并发
 )
 class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
@@ -79,49 +99,20 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
         4. 返回结果
 
         """
-        # 从 context 获取 API client 和配置。
-        # 运行时链路会统一传 ToolUseContext；这里额外保留对测试里 MagicMock 上下文的兜底。
-        tool_context: ToolUseContext | None = None
-        if isinstance(context, ToolUseContext):
-            tool_context = context
-        elif isinstance(context, dict):
-            tool_context = ToolUseContext.coerce(context)
-
-        if tool_context is not None:
-            options = tool_context.get_options()
-        elif isinstance(getattr(context, "options", None), dict):
-            options = context.options
-        else:
-            options = {}
+        # context 在 streaming_executor 入口已经 coerce 为 ToolUseContext
+        options = context.get_options()
         api_client = options.get("api_client")
         if not api_client:
             return ToolResult(
                 error="API client not available in context. Cannot run sub-agent."
             )
 
-        cwd = "."
-        maybe_cwd = tool_context.get("cwd", None) if tool_context is not None else None
-        if isinstance(maybe_cwd, str) and maybe_cwd:
-            cwd = maybe_cwd
-        if cwd == ".":
-            cwd = options.get("cwd", ".")
+        cwd = context.get("cwd", ".")
         parent_model = options.get("model", "claude-sonnet-4-20250514")
-
-        runtime_controller = None
-        interaction_broker = None
-        session_id = options.get("session_id")
-        permission_context = options.get("permission_context")
-        if tool_context is not None:
-            runtime_candidate = tool_context.get("runtime_controller")
-            if callable(getattr(runtime_candidate, "emit_runtime_event", None)):
-                runtime_controller = runtime_candidate
-            interaction_candidate = tool_context.get("interaction_broker")
-            if callable(getattr(interaction_candidate, "request", None)):
-                interaction_broker = interaction_candidate
-            permission_candidate = tool_context.get("permission_context")
-            if permission_candidate is not None:
-                permission_context = permission_candidate
-            session_id = tool_context.get("session_id", session_id)
+        session_id = context.get("session_id")
+        permission_context = context.get("permission_context")
+        runtime_controller = context.get("runtime_controller")
+        interaction_broker = context.get("interaction_broker")
 
         # 构建子代理执行上下文（传递给 team 模块）
         subagent_context = {
@@ -131,8 +122,8 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
             "cwd": cwd,
             "system_prompt": options.get("system_prompt", ""),
             "agent_id": options.get("agent_id"),
-            "runtime_controller": runtime_controller or options.get("runtime_controller"),
-            "interaction_broker": interaction_broker or runtime_controller or options.get("interaction_broker"),
+            "runtime_controller": runtime_controller,
+            "interaction_broker": interaction_broker or runtime_controller,
             "permission_context": permission_context,
             "session_id": session_id,
         }
@@ -147,12 +138,9 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
             # 接入 team 模块的 run_subagent_with_mode
             from codo.team.enhanced_agent import run_subagent_with_mode
 
-            # 兼容旧行为：未显式指定类型时默认走 Explore（而非 fork）
+           
             effective_args = args
-            if not args.subagent_type:
-                effective_args = args.model_copy(
-                    update={"subagent_type": DEFAULT_AGENT_TYPE}
-                )
+
 
             result = await run_subagent_with_mode(
                 args=effective_args,
@@ -206,6 +194,7 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
         return ToolResult(data=output, receipt=receipt)
 
     async def description(self, input_data: AgentToolInput, options: dict) -> str:
+        """返回工具简短描述（用于 API schema）。"""
         return DESCRIPTION
 
     async def prompt(self, options: dict) -> str:
@@ -228,11 +217,21 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
         }
 
     def user_facing_name(self, input_data=None) -> str:
+        """
+        返回用户可见的工具名称。
+
+        若有 subagent_type，返回 "Agent(类型名)"，否则返回 "Agent"。
+        """
         if input_data and hasattr(input_data, "subagent_type") and input_data.subagent_type:
             return f"Agent({input_data.subagent_type})"
         return "Agent"
 
     def get_tool_use_summary(self, input_data=None) -> Optional[str]:
+        """
+        返回工具调用摘要文本，用于侧边栏展示。
+
+        后台任务会在描述后追加 "[后台]" 标记。
+        """
         if input_data and hasattr(input_data, "description"):
             if getattr(input_data, "run_in_background", False):
                 return f"{input_data.description} [后台]"
@@ -240,6 +239,11 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
         return None
 
     def get_activity_description(self, input_data=None) -> Optional[str]:
+        """
+        返回活动描述文本，用于 spinner 展示当前正在执行的子代理任务。
+
+        格式：Running <agent_type>: <description>
+        """
         if input_data and hasattr(input_data, "description"):
             agent_type = getattr(input_data, "subagent_type", None) or DEFAULT_AGENT_TYPE
             if getattr(input_data, "run_in_background", False):

@@ -51,13 +51,36 @@ _UNSET = object()
 
 #这个函数的作用是将复杂的 Python 对象转换为简单的字典列表，以便传递给 UI 层显示。
 def _serialize_ui_metadata(items: List[Any]) -> List[Dict[str, Any]]:
+    """
+    将复杂 Python 对象列表序列化为可 JSON 化的字典列表，供 UI 层展示。
+
+    [Workflow]
+    1. 遍历 items 列表
+    2. 对 dataclass 对象使用 asdict() 转换
+    3. 对普通字典直接保留
+    4. 对有 __dict__ 属性的对象使用 vars() 转换
+    5. 其他类型跳过
+
+    参数:
+        items: 待序列化的对象列表，可能包含 dataclass、dict、普通对象
+
+    返回:
+        # 示例（输入为 ToolReceipt dataclass 列表）：
+        [
+            {"tool_name": "Bash", "command": "ls -la", "exit_code": 0},
+            {"tool_name": "Read", "file_path": "/tmp/test.py", "lines_read": 42},
+        ]
+    """
     serialized: List[Dict[str, Any]] = []
     for item in items or []:
         if is_dataclass(item):
+            # dataclass 使用 asdict() 递归转换为字典
             serialized.append(asdict(item))
         elif isinstance(item, dict):
+            # 普通字典直接保留
             serialized.append(item)
         elif hasattr(item, "__dict__"):
+            # 普通对象通过 vars() 获取实例属性字典
             serialized.append(dict(vars(item)))
     return serialized
 #这个函数用于记录运行时检查点（Checkpoint），在对话执行的不同阶段保存状态快照，用于调试、恢复和分析。
@@ -68,25 +91,41 @@ def _record_runtime_checkpoint(
     turn_count: int,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
-    """记录运行时检查点，追踪对话执行状态
+    """
+    记录运行时检查点，在对话执行的不同阶段保存状态快照。
 
-    在不同阶段保存快照（phase + turn_count + metadata），便于调试/恢复/分析。
+    [Workflow]
+    1. 若 runtime_controller 为 None，直接返回 None（无控制器时跳过）
+    2. 生成 UUID 作为 checkpoint_id
+    3. 创建 RuntimeCheckpoint 对象（携带 phase、turn_count、metadata）
+    4. 调用 runtime_controller.checkpoint() 存储到内部字典
+    5. 同时更新 _latest_checkpoint_id 指向最新检查点
+    6. 返回 checkpoint_id 供后续查询
 
-    底层实现：
-    1. 生成 UUID 作为 checkpoint_id
-    2. 创建 RuntimeCheckpoint(checkpoint_id, phase, turn_count, created_at=time.time(), metadata)
-    3. 调用 runtime_controller.checkpoint() 存储到 _checkpoints: dict[str, RuntimeCheckpoint]
-    4. 同时更新 _latest_checkpoint_id 指向最新检查点
-    5. 返回 checkpoint_id 供后续查询（get_checkpoint/export_checkpoints）
+    参数:
+        runtime_controller: 运行时控制器实例，None 时跳过记录
+        phase: 当前执行阶段，如 "prepare_turn"、"execute_tools"、"complete"
+        turn_count: 当前轮次计数，从 1 开始
+        metadata: 额外的状态元数据，如：
+            {
+                "messages_state": [{"role": "user", "content": "..."}, ...],
+                "message_count": 6,
+                "tool_count": 2,
+            }
+
+    返回:
+        str | None: 检查点 ID（UUID 字符串），如 "a1b2c3d4-e5f6-..."，
+                    若 runtime_controller 为 None 则返回 None
     """
     if runtime_controller is None:
         return None
     checkpoint = RuntimeCheckpoint(
-        checkpoint_id=str(uuid4()),
+        checkpoint_id=str(uuid4()),  # 生成唯一 ID
         phase=phase,
         turn_count=turn_count,
         metadata=metadata or {},
     )
+    # 存储到控制器的 _checkpoints 字典，并更新 _latest_checkpoint_id
     runtime_controller.checkpoint(checkpoint)
     return checkpoint.checkpoint_id
 
@@ -469,6 +508,13 @@ class QueryPhaseTracker:
     """
 
     def __init__(self, state: QueryState, runtime_controller: Any) -> None:
+        """
+        初始化阶段追踪器，绑定初始状态和运行时控制器。
+
+        参数:
+            state: 初始 QueryState 实例
+            runtime_controller: 运行时控制器，用于发射事件；None 表示无 UI 层
+        """
         self.state = state
         self.runtime_controller = runtime_controller
 
@@ -773,6 +819,21 @@ async def query_loop(
     last_started_turn: Optional[int] = None
 
     def _safe_block_name(block: Any) -> str:
+        """
+        安全提取内容块的工具名称，兼容真实 API 对象和测试 Mock 对象。
+
+        [Workflow]
+        1. 若 block 是字典，直接取 "name" 键
+        2. 若 block 是对象，取 .name 属性
+        3. 若 .name 不是字符串（如 Mock 对象），尝试取 ._mock_name
+        4. 兜底返回空字符串
+
+        参数:
+            block: API 返回的内容块，可能是字典或 SDK 对象
+
+        返回:
+            str: 工具名称，如 "Bash"、"Read"，无法提取时返回 ""
+        """
         if isinstance(block, dict):
             name = block.get("name")
             return name if isinstance(name, str) else str(name or "")
@@ -781,6 +842,7 @@ async def query_loop(
         if isinstance(name, str):
             return name
 
+        # 兼容 unittest.mock.Mock 对象（测试场景）
         mock_name = getattr(block, "_mock_name", None)
         if isinstance(mock_name, str) and mock_name:
             return mock_name
@@ -1020,6 +1082,12 @@ async def query_loop(
                         raw_async_iter = event_iter
 
                         async def _adapt_async_iterator():
+                            """
+                            将只有 __anext__ 而没有 __aiter__ 的异步迭代器适配为标准异步生成器。
+
+                            某些 Mock 对象或非标准流实现只提供 __anext__ 而缺少 __aiter__，
+                            此适配器将其包装为可用 async for 迭代的标准异步生成器。
+                            """
                             while True:
                                 try:
                                     yield await raw_async_iter.__anext__()

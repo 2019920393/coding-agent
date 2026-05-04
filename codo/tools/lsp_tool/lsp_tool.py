@@ -55,6 +55,7 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
     """
 
     def __init__(self):
+        """初始化 LSPTool，设置工具名称并创建管理器锁。"""
         self.name = "LSP"
         self._manager: Optional[LSPServerManager] = None
         self._manager_lock = asyncio.Lock()
@@ -117,7 +118,7 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
             验证结果
         """
         # 获取工作目录
-        cwd = context.get("cwd") or context.get_options().get("cwd", ".")
+        cwd = context.get("cwd", ".")
 
         # 解析文件路径
         file_path = Path(input_data.file_path)
@@ -306,7 +307,7 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
         """
         from codo.tools.types import ToolResult as TR
         # 获取工作目录
-        cwd = context.get("cwd") or context.get_options().get("cwd", ".")
+        cwd = context.get("cwd", ".")
 
         # 解析文件路径
         file_path = Path(input_data.file_path)

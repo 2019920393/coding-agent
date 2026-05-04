@@ -43,14 +43,14 @@ class AgentDefinition:
         source:           来源标记（built-in / project / user）
     """
     agent_type: str                                    # 代理类型唯一标识
-    when_to_use: str                                   # 使用场景描述（给 LLM 决策用）
+    when_to_use: str                                   # 使用场景描述（给 LLM 决策用）它会被嵌入到 get_agent_tool_prompt() 生成的 prompt 里
     system_prompt: str                                 # 子代理系统提示词
     tools: Optional[List[str]] = None                  # 允许工具列表（None=继承）
     disallowed_tools: List[str] = field(default_factory=list)  # 禁止工具列表
     model: Optional[str] = None                        # 模型名称（None=继承）
     max_turns: int = 10                                # 最大对话轮数
     is_read_only: bool = False                         # 是否只读模式
-    source: str = "built-in"                           # 来源：built-in / project / user
+    source: str = "built-in"                           # 来源：built-in / project / user 主要用于调试的时候区分是哪个版本的agent在运行
 
 # ============================================================================
 # Explore Agent
@@ -265,7 +265,7 @@ def _parse_frontmatter(content: str) -> Tuple[dict, str]:
 # 从目录加载自定义 Agent 定义
 
 # ============================================================================
-
+# todo部分字段没映射上
 def load_agents_from_dir(agents_dir: str) -> List[AgentDefinition]:
     """
     从目录加载自定义 agent 定义

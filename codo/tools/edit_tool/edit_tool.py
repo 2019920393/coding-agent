@@ -35,15 +35,18 @@ class EditToolOutput(BaseModel):
 
 class EditTool(Tool[EditToolInput, EditToolOutput, None]):
     def __init__(self):
+        """初始化 EditTool，设置工具名称和最大结果大小。"""
         self.name = "Edit"
         self.max_result_size_chars = 100000
 
     @property
     def input_schema(self) -> type[EditToolInput]:
+        """返回输入 schema 类 EditToolInput。"""
         return EditToolInput
 
     @property
     def output_schema(self) -> type[EditToolOutput]:
+        """返回输出 schema 类 EditToolOutput。"""
         return EditToolOutput
 
     async def description(self, input_data: EditToolInput, options: dict) -> str:
@@ -82,6 +85,12 @@ class EditTool(Tool[EditToolInput, EditToolOutput, None]):
         )
 
     def map_tool_result_to_tool_result_block_param(self, content: EditToolOutput, tool_use_id: str):
+        """
+        将工具结果转换为 API tool_result 消息块格式。
+
+        返回:
+            dict: 如 {"type": "tool_result", "tool_use_id": "...", "content": "Edited /path/file.py\n@@ -1,3 +1,4 @@..."}
+        """
         return {
             "type": "tool_result",
             "tool_use_id": tool_use_id,
@@ -89,15 +98,21 @@ class EditTool(Tool[EditToolInput, EditToolOutput, None]):
         }
 
     def user_facing_name(self) -> str:
+        """返回用户可见的工具名称（中文）。"""
         return "编辑文件"
 
     def is_concurrency_safe(self, input_data: EditToolInput) -> bool:
+        """文件编辑不是并发安全的，返回 False。"""
         return False
 
     def is_read_only(self, input_data: EditToolInput) -> bool:
+        """文件编辑不是只读操作，返回 False。"""
         return False
 
     async def validate_input(self, input_data: EditToolInput, context: ToolUseContext) -> ValidationResult:
+        """
+        验证输入参数：文件路径必须是绝对路径，且 old_string 与 new_string 必须不同。
+        """
         if not os.path.isabs(input_data.file_path):
             return ValidationResult(result=False, message='文件路径必须是绝对路径')
 
@@ -114,6 +129,19 @@ class EditTool(Tool[EditToolInput, EditToolOutput, None]):
         parent_message: Any,
         on_progress: Optional[Callable] = None
     ) -> ToolResult[EditToolOutput]:
+        """
+        执行精确字符串替换并生成 diff。
+
+        [Workflow]
+        1. 读取原始文件内容
+        2. 执行字符串替换（replace_all=True 时替换全部，否则只替换第一次出现）
+        3. 生成 unified diff
+        4. 构建 ProposedFileChange（待审阅变更）
+        5. 返回 ToolResult（含 DiffReceipt 和 staged_changes）
+
+        返回:
+            ToolResult[EditToolOutput]: 包含文件路径、diff 和变更行数
+        """
         file_path = expandPath(input_data.file_path)
         fs = getFsImplementation()
 

@@ -7,7 +7,7 @@
 3. 读写项目配置（{cwd}/.codo/settings.json）
 4. 配置合并（全局 → 项目 → 环境变量）
 
-简化：去除多用户/OAuth/analytics/自动更新等功能，
+
 保留核心配置项：model、autoCompact、memory、permissions 等
 """
 
@@ -128,7 +128,7 @@ class GlobalConfig:
 
     # ---- 主题 ----
     # 终端主题，支持 dark/light
-    theme: str = "dark"
+    theme: str = "light"  # todo 暂时没实现主题的切换
 
     # ---- 记忆系统 ----
     # 是否启用记忆系统
@@ -136,7 +136,7 @@ class GlobalConfig:
 
     # ---- 权限 ----
     # 是否已接受绕过权限模式的确认
-    bypass_permissions_mode_accepted: bool = False
+    bypass_permissions_mode_accepted: bool = True
 
     # ---- 环境变量 ----
     # 额外注入的环境变量字典，会在工具执行时合并到进程环境
@@ -343,7 +343,8 @@ def get_merged_config(cwd: str) -> Dict[str, Any]:
     3. 项目配置覆盖全局配置（update 操作）
     4. 检查环境变量 CODO_MODEL、CODO_LANGUAGE，覆盖文件配置
     5. 返回最终合并后的配置字典
-
+  
+    环境变量 > 项目配置 > 用户配置
     Args:
         cwd: 项目工作目录
 

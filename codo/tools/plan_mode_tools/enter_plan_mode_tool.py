@@ -16,27 +16,34 @@ class EnterPlanModeTool(Tool[EnterPlanModeInput, EnterPlanModeOutput, None]):
     """
 
     def __init__(self):
+        """初始化 EnterPlanModeTool，设置工具名称和最大结果大小。"""
         self.name = ENTER_PLAN_MODE_TOOL_NAME
         self.max_result_size_chars = 10_000
 
     @property
     def input_schema(self) -> type[EnterPlanModeInput]:
+        """返回输入 schema 类 EnterPlanModeInput。"""
         return EnterPlanModeInput
 
     @property
     def output_schema(self) -> type[EnterPlanModeOutput]:
+        """返回输出 schema 类 EnterPlanModeOutput。"""
         return EnterPlanModeOutput
 
     async def description(self, input_data: EnterPlanModeInput, options: Dict[str, Any]) -> str:
+        """返回工具简短描述。"""
         return ENTER_PLAN_MODE_DESCRIPTION
 
     async def prompt(self, options: Dict[str, Any]) -> str:
+        """返回系统提示词中的工具描述。"""
         return ENTER_PLAN_MODE_PROMPT
 
     def is_read_only(self, input_data: EnterPlanModeInput = None) -> bool:
+        """进入计划模式是只读操作（不修改文件），返回 True。"""
         return True
 
     def is_concurrency_safe(self, input_data: EnterPlanModeInput = None) -> bool:
+        """进入计划模式是并发安全的，返回 True。"""
         return True
 
     async def validate_input(

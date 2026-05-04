@@ -27,6 +27,7 @@ class DiffHunk:
 class StructuredPatch:
     """结构化 patch 数据结构"""
     hunks: List[DiffHunk]
+    
     oldFileName: str
     newFileName: str
 

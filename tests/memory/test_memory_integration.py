@@ -24,7 +24,7 @@ class TestMemoryIntegration:
             manager.create_memory(
                 name="Test Memory",
                 description="Test integration",
-                memory_type="user",
+                memory_type="preference",
                 content="This is a test memory for integration."
             )
 
@@ -62,7 +62,7 @@ class TestMemoryIntegration:
             manager.create_memory(
                 name="User Info",
                 description="User details",
-                memory_type="user",
+                memory_type="preference",
                 content="User is a senior engineer."
             )
 
@@ -76,7 +76,7 @@ class TestMemoryIntegration:
             manager.create_memory(
                 name="Project Info",
                 description="Project deadline",
-                memory_type="project",
+                memory_type="project_fact",
                 content="Release on 2026-05-01."
             )
 

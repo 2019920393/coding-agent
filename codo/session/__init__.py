@@ -21,9 +21,6 @@ from codo.session.storage import (
     build_conversation_chain,
     get_sessions_dir,
     get_session_file_path,
-    get_project_dir,
-    sanitize_path,
-    resolve_session_file_path,
     list_session_files,
 )
 from codo.session.query import (
@@ -78,9 +75,6 @@ __all__ = [
     "build_conversation_chain",
     "get_sessions_dir",
     "get_session_file_path",
-    "get_project_dir",
-    "sanitize_path",
-    "resolve_session_file_path",
     "list_session_files",
     # Query
     "validate_uuid",

@@ -68,6 +68,20 @@ class ToolUseContext:
         # 支持从字典直接构造（兼容 execution_context 字典格式）
         _dict: Dict[str, Any] = None,
     ):
+        """
+        初始化工具使用上下文。
+
+        支持两种构造方式：
+        1. 关键字参数构造：传入 options、abort_controller、messages
+        2. 字典构造：传入 _dict（直接包装 execution_context 字典，保持写回能力）
+
+        参数:
+            options: 配置选项字典，如：
+                {"tools": [...], "model": "claude-opus-4-20250514", "api_client": <AsyncAnthropic>}
+            abort_controller: 中止控制器实例，用于取消长时间运行的工具
+            messages: 当前对话消息列表
+            _dict: 直接包装的底层字典（优先级高于其他参数），如 execution_context 字典
+        """
         object.__setattr__(self, "_data", _dict if _dict is not None else {})
 
         if _dict is None:
@@ -84,14 +98,39 @@ class ToolUseContext:
         self.messages = self._data.get("messages", messages or [])
 
     def __setattr__(self, key: str, value: Any) -> None:
+        """
+        拦截属性赋值，同步写回底层 _data 字典（私有属性除外）。
+
+        确保通过 context.cwd = "/new/path" 赋值时，底层字典也同步更新，
+        保持对象属性和字典数据的一致性。
+
+        参数:
+            key: 属性名
+            value: 属性值
+        """
         object.__setattr__(self, key, value)
         if key.startswith("_"):
-            return
+            return  # 私有属性不写回字典
         data = self.__dict__.get("_data")
         if isinstance(data, dict):
             data[key] = value
 
     def __getattr__(self, key: str) -> Any:
+        """
+        属性访问兜底：从底层 _data 字典中查找未定义的属性。
+
+        当通过 context.some_key 访问不存在的属性时，
+        先从 _data 字典中查找，找不到则抛出 AttributeError。
+
+        参数:
+            key: 属性名
+
+        返回:
+            _data 字典中对应的值
+
+        异常:
+            AttributeError: 属性在 _data 中也不存在时抛出
+        """
         data = self.__dict__.get("_data", {})
         if key in data:
             return data[key]
@@ -124,6 +163,27 @@ class ToolUseContext:
         if hasattr(self, key):
             setattr(self, key, value)
 
+    @classmethod
+    def coerce(cls, obj: Any) -> "ToolUseContext":
+        """
+        统一入口：把任意输入规范化为 ToolUseContext
+
+        - 已经是 ToolUseContext → 原样返回
+        - dict → 包装为 ToolUseContext
+        - 其他 → 尝试当字典用，失败则创建空上下文
+
+        调用方只需在入口调一次，后续代码全部用属性访问。
+        """
+        if isinstance(obj, cls):
+            return obj
+        if isinstance(obj, dict):
+            return cls(_dict=obj)
+        # 兜底：尝试把对象的 __dict__ 当数据源
+        try:
+            return cls(_dict=vars(obj))
+        except TypeError:
+            return cls()
+
     def setdefault(self, key: str, default: Any = None) -> Any:
         """支持 context.setdefault("key", value)"""
         if key not in self._data:
@@ -131,20 +191,45 @@ class ToolUseContext:
         return self._data[key]
 
     def items(self):
+        """返回底层上下文字典的 (key, value) 迭代器，兼容字典协议。"""
         return self._data.items()
 
     def keys(self):
+        """返回底层上下文字典的 key 迭代器，兼容字典协议。"""
         return self._data.keys()
 
     def values(self):
+        """返回底层上下文字典的 value 迭代器，兼容字典协议。"""
         return self._data.values()
 
     def to_dict(self) -> Dict[str, Any]:
-        """返回底层上下文字典本身，便于需要原始字典的链路复用。"""
+        """
+        返回底层上下文字典本身，便于需要原始字典的链路复用。
+
+        返回:
+            dict: 底层 _data 字典，如：
+                {
+                    "cwd": "/home/user/project",
+                    "session_id": "sess_abc123",
+                    "options": {"tools": [...], "model": "claude-opus-4-20250514"},
+                    "abort_controller": <AbortController>,
+                }
+        """
         return self._data
 
     def get_options(self) -> Dict[str, Any]:
-        """返回可写的 options 字典，缺失时自动初始化并回写到底层上下文。"""
+        """
+        返回可写的 options 字典，缺失时自动初始化并回写到底层上下文。
+
+        返回:
+            dict: options 字典，如：
+                {
+                    "tools": [bash_tool, read_tool, ...],
+                    "model": "claude-opus-4-20250514",
+                    "api_client": <AsyncAnthropic>,
+                    "normalize_question_mark": True,
+                }
+        """
         options = self.get("options", {})
         if not isinstance(options, dict):
             options = {}
@@ -664,6 +749,21 @@ def build_tool(
         ```
     """
     def decorator(cls: type[T]) -> type[T]:
+        """
+        实际的类装饰器，将元数据注入工具类并创建带 schema 属性的子类。
+
+        [Workflow]
+        1. 将 name、max_result_size_chars、aliases 等元数据设置为类属性
+        2. 创建 ToolWithSchema 子类，通过 @property 实现 input_schema/output_schema 抽象属性
+        3. 复制类名和模块信息，保持调试信息正确
+        4. 若提供了可选覆盖函数（is_enabled 等），用 lambda 包装后注入子类
+
+        参数:
+            cls: 被装饰的工具类（继承自 Tool）
+
+        返回:
+            ToolWithSchema: 注入了 schema 属性和元数据的新子类
+        """
         # 设置类属性
         cls.name = name
         cls.max_result_size_chars = max_result_size_chars
@@ -680,11 +780,13 @@ def build_tool(
         class ToolWithSchema(cls):  # type: ignore
             @property
             def input_schema(self) -> type[BaseModel]:
+                """返回工具的输入 schema 类（由 build_tool 装饰器注入）。"""
                 return _input_schema
 
             if _output_schema is not None:
                 @property
                 def output_schema(self) -> Optional[type]:
+                    """返回工具的输出 schema 类（由 build_tool 装饰器注入，可选）。"""
                     return _output_schema
 
         # 复制类名和模块信息

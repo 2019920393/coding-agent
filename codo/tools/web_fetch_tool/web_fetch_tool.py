@@ -30,27 +30,34 @@ class WebFetchTool(Tool[WebFetchInput, WebFetchOutput, None]):
     """
 
     def __init__(self):
+        """初始化 WebFetchTool，设置工具名称和最大结果大小（100K）。"""
         self.name = WEB_FETCH_TOOL_NAME
         self.max_result_size_chars = 100_000
 
     @property
     def input_schema(self) -> type[WebFetchInput]:
+        """返回输入 schema 类 WebFetchInput。"""
         return WebFetchInput
 
     @property
     def output_schema(self) -> type[WebFetchOutput]:
+        """返回输出 schema 类 WebFetchOutput。"""
         return WebFetchOutput
 
     async def description(self, input_data: WebFetchInput, options: Dict[str, Any]) -> str:
+        """返回工具简短描述。"""
         return DESCRIPTION
 
     async def prompt(self, options: Dict[str, Any]) -> str:
+        """返回系统提示词中的工具描述。"""
         return PROMPT
 
     def is_read_only(self, input_data: WebFetchInput = None) -> bool:
+        """网页抓取是只读操作，返回 True。"""
         return True
 
     def is_concurrency_safe(self, input_data: WebFetchInput = None) -> bool:
+        """网页抓取是并发安全的，返回 True。"""
         return True
 
     async def check_permissions(

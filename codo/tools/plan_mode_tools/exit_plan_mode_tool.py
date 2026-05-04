@@ -16,30 +16,38 @@ class ExitPlanModeTool(Tool[ExitPlanModeInput, ExitPlanModeOutput, None]):
     """
 
     def __init__(self):
+        """初始化 ExitPlanModeTool，设置工具名称和最大结果大小。"""
         self.name = EXIT_PLAN_MODE_TOOL_NAME
         self.max_result_size_chars = 100_000
 
     @property
     def input_schema(self) -> type[ExitPlanModeInput]:
+        """返回输入 schema 类 ExitPlanModeInput。"""
         return ExitPlanModeInput
 
     @property
     def output_schema(self) -> type[ExitPlanModeOutput]:
+        """返回输出 schema 类 ExitPlanModeOutput。"""
         return ExitPlanModeOutput
 
     async def description(self, input_data: ExitPlanModeInput, options: Dict[str, Any]) -> str:
+        """返回工具简短描述。"""
         return EXIT_PLAN_MODE_DESCRIPTION
 
     async def prompt(self, options: Dict[str, Any]) -> str:
+        """返回系统提示词中的工具描述。"""
         return EXIT_PLAN_MODE_PROMPT
 
     def is_read_only(self, input_data: ExitPlanModeInput = None) -> bool:
+        """退出计划模式会写入计划文件，不是只读操作，返回 False。"""
         return False
 
     def is_concurrency_safe(self, input_data: ExitPlanModeInput = None) -> bool:
+        """退出计划模式是并发安全的，返回 True。"""
         return True
 
     def requires_user_interaction(self) -> bool:
+        """退出计划模式需要用户确认批准计划，返回 True。"""
         return True
 
     async def validate_input(

@@ -109,11 +109,7 @@ def load_session_metadata(file_path: str) -> Optional[SessionInfo]:
                 record = json.loads(line)
                 record_type = record.get('type')
                 if record_type in ('metadata', 'custom-title'):
-                    custom_title = (
-                        record.get('customTitle')
-                        or record.get('custom_title')
-                        or record.get('title')
-                    )
+                    custom_title = record.get('custom_title')
                     break
             except json.JSONDecodeError:
                 continue

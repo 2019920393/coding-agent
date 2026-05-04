@@ -32,6 +32,7 @@ class SubAgentContext:
     is_background: bool = False
     agent_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    max_turns: int = 10
 
 def prepare_fresh_context(
     agent_type: str,
@@ -39,6 +40,7 @@ def prepare_fresh_context(
     tools: List[Any],
     model: str,
     is_background: bool = False,
+    max_turns: int = 10, 
 ) -> SubAgentContext:
     """
     Prepare a fresh sub-agent context.
@@ -64,6 +66,7 @@ def prepare_fresh_context(
         system_prompt=system_prompt,
         tools=tools,
         model=model,
+        max_turns=max_turns,
         is_background=is_background,
         agent_id=f"agent_{uuid.uuid4().hex[:8]}",
         metadata={
