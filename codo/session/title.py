@@ -10,7 +10,7 @@
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from anthropic import AsyncAnthropic
 
@@ -34,7 +34,7 @@ Bad (too vague): {"title": "Code changes"}
 Bad (too long): {"title": "Investigate and fix the issue where the login button does not respond on mobile devices"}
 Bad (wrong case): {"title": "Fix Login Button On Mobile"}"""
 
-def extract_conversation_text(messages: List[Dict[str, Any]]) -> str:
+def extract_conversation_text(messages: list[dict[str, Any]]) -> str:
     """
     从消息列表中提取对话文本
 
@@ -87,8 +87,8 @@ def extract_conversation_text(messages: List[Dict[str, Any]]) -> str:
 async def generate_session_title(
     client: AsyncAnthropic,
     model: str,
-    messages: List[Dict[str, Any]],
-) -> Optional[str]:
+    messages: list[dict[str, Any]],
+) -> str | None:
     """
     使用 LLM 生成会话标题
 
@@ -157,9 +157,9 @@ async def generate_session_title(
 async def generate_and_save_title(
     client: AsyncAnthropic,
     model: str,
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     session_storage: Any,
-) -> Optional[str]:
+) -> str | None:
     """
     生成会话标题并保存到会话存储
 

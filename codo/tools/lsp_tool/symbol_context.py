@@ -4,14 +4,12 @@
 从文件内容中提取光标位置的符号名称
 """
 
-import re
-from typing import Optional
 
 def extract_symbol_at_position(
     content: str,
     line: int,
     character: int,
-) -> Optional[str]:
+) -> str | None:
     """提取光标位置的符号名称
 
     Args:
@@ -79,7 +77,7 @@ def extract_symbol_context(
     line: int,
     character: int,
     context_lines: int = 2,
-) -> Optional[str]:
+) -> str | None:
     """提取符号及其上下文
 
     Args:

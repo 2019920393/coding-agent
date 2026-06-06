@@ -1,6 +1,7 @@
 """PlanMode 工具类型定义"""
-from typing import Optional, List
+
 from pydantic import BaseModel, Field
+
 
 class AllowedPrompt(BaseModel):
     """允许的提示权限"""
@@ -17,16 +18,16 @@ class EnterPlanModeOutput(BaseModel):
 
 class ExitPlanModeInput(BaseModel):
     """ExitPlanMode 输入参数"""
-    allowedPrompts: Optional[List[AllowedPrompt]] = Field(
+    allowedPrompts: list[AllowedPrompt] | None = Field(
         default=None,
         description="Prompt-based permissions needed to implement the plan"
     )
-    plan: Optional[str] = Field(default=None, description="Plan content (injected from disk)")
-    planFilePath: Optional[str] = Field(default=None, description="Plan file path (injected)")
+    plan: str | None = Field(default=None, description="Plan content (injected from disk)")
+    planFilePath: str | None = Field(default=None, description="Plan file path (injected)")
 
 class ExitPlanModeOutput(BaseModel):
     """ExitPlanMode 输出结果"""
-    plan: Optional[str] = Field(description="The approved plan content")
+    plan: str | None = Field(description="The approved plan content")
     isAgent: bool = Field(description="Whether this is an agent context")
-    filePath: Optional[str] = Field(default=None, description="Plan file path")
-    planWasEdited: Optional[bool] = Field(default=None, description="Whether plan was edited by user")
+    filePath: str | None = Field(default=None, description="Plan file path")
+    planWasEdited: bool | None = Field(default=None, description="Whether plan was edited by user")

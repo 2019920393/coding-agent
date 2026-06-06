@@ -13,10 +13,10 @@
 
 import asyncio
 import os
-from typing import List, Optional, Set
 from datetime import datetime
 
-from codo.types.orchestration import ToolExecutionTask, ExecutionStatus
+from codo.types.orchestration import ExecutionStatus, ToolExecutionTask
+
 
 def get_max_concurrency() -> int:
     """
@@ -44,7 +44,7 @@ class ConcurrencyController:
         _executing_unsafe: 是否有非并发安全工具正在执行
     """
 
-    def __init__(self, max_concurrency: Optional[int] = None):
+    def __init__(self, max_concurrency: int | None = None):
         """
         初始化并发控制器
 
@@ -52,9 +52,16 @@ class ConcurrencyController:
             max_concurrency: 最大并发数，默认从环境变量读取
         """
         self.max_concurrency = max_concurrency or get_max_concurrency()
-        self._executing_tasks: Set[str] = set()
+        self._executing_tasks: set[str] = set()
         self._executing_unsafe: bool = False
-        self._lock = asyncio.Lock()
+        self._condition = asyncio.Condition()
+
+    def _can_execute_now(self, task: ToolExecutionTask) -> bool:
+        if self._executing_unsafe:
+            return False
+        if not task.is_concurrency_safe and self._executing_tasks:
+            return False
+        return len(self._executing_tasks) < self.max_concurrency
 
     async def can_execute(self, task: ToolExecutionTask) -> bool:
         """
@@ -71,20 +78,8 @@ class ConcurrencyController:
         Returns:
             是否可以执行
         """
-        async with self._lock:
-            # [Workflow] 规则1: 有非并发安全工具正在执行，其他工具必须等待
-            if self._executing_unsafe:
-                return False
-
-            # [Workflow] 规则2: 任务是非并发安全的，必须等待所有其他工具完成
-            if not task.is_concurrency_safe and len(self._executing_tasks) > 0:
-                return False
-
-            # [Workflow] 规则3: 并发数不能超过最大限制
-            if len(self._executing_tasks) >= self.max_concurrency:
-                return False
-
-            return True
+        async with self._condition:
+            return self._can_execute_now(task)
 
     async def acquire(self, task: ToolExecutionTask) -> None:
         """
@@ -95,12 +90,9 @@ class ConcurrencyController:
         Args:
             task: 工具执行任务
         """
-        # [Workflow] 等待直到可以执行
-        while not await self.can_execute(task):
-            await asyncio.sleep(0.01)  # 10ms 轮询间隔
-
-        # [Workflow] 标记为正在执行
-        async with self._lock:
+        async with self._condition:
+            while not self._can_execute_now(task):
+                await self._condition.wait()
             self._executing_tasks.add(task.tool_use_id)
             if not task.is_concurrency_safe:
                 self._executing_unsafe = True
@@ -116,11 +108,12 @@ class ConcurrencyController:
         Args:
             task: 工具执行任务
         """
-        async with self._lock:
+        async with self._condition:
             self._executing_tasks.discard(task.tool_use_id)
             if not task.is_concurrency_safe:
                 self._executing_unsafe = False
             task.end_time = datetime.now()
+            self._condition.notify_all()
 
     @property
     def active_count(self) -> int:
@@ -152,14 +145,14 @@ class ToolExecutionQueue:
         _controller: 并发控制器
     """
 
-    def __init__(self, max_concurrency: Optional[int] = None):
+    def __init__(self, max_concurrency: int | None = None):
         """
         初始化执行队列
 
         Args:
             max_concurrency: 最大并发数
         """
-        self._tasks: List[ToolExecutionTask] = []
+        self._tasks: list[ToolExecutionTask] = []
         self._controller = ConcurrencyController(max_concurrency)
 
     def add_task(self, task: ToolExecutionTask) -> None:
@@ -172,7 +165,7 @@ class ToolExecutionQueue:
         task.status = ExecutionStatus.QUEUED
         self._tasks.append(task)
 
-    def add_tasks(self, tasks: List[ToolExecutionTask]) -> None:
+    def add_tasks(self, tasks: list[ToolExecutionTask]) -> None:
         """
         批量添加任务到队列
 
@@ -182,7 +175,7 @@ class ToolExecutionQueue:
         for task in tasks:
             self.add_task(task)
 
-    async def get_next_executable(self) -> Optional[ToolExecutionTask]:
+    async def get_next_executable(self) -> ToolExecutionTask | None:
         """
         获取下一个可执行任务
 
@@ -237,7 +230,7 @@ class ToolExecutionQueue:
         task.status = ExecutionStatus.FAILED
         task.error = error
 
-    def get_queued_tasks(self) -> List[ToolExecutionTask]:
+    def get_queued_tasks(self) -> list[ToolExecutionTask]:
         """
         获取所有排队中的任务
 
@@ -246,7 +239,7 @@ class ToolExecutionQueue:
         """
         return [t for t in self._tasks if t.status == ExecutionStatus.QUEUED]
 
-    def get_executing_tasks(self) -> List[ToolExecutionTask]:
+    def get_executing_tasks(self) -> list[ToolExecutionTask]:
         """
         获取所有正在执行的任务
 
@@ -255,7 +248,7 @@ class ToolExecutionQueue:
         """
         return [t for t in self._tasks if t.status == ExecutionStatus.EXECUTING]
 
-    def get_completed_tasks(self) -> List[ToolExecutionTask]:
+    def get_completed_tasks(self) -> list[ToolExecutionTask]:
         """
         获取所有已完成的任务（成功或失败）
 

@@ -19,12 +19,13 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
+
 
 def log_diagnostics(
     level: str,
     event: str,
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 ) -> None:
     """
     记录诊断日志到文件
@@ -68,18 +69,18 @@ def log_diagnostics(
             # 静默失败
             pass
 
-def log_info(event: str, data: Optional[Dict[str, Any]] = None) -> None:
+def log_info(event: str, data: dict[str, Any] | None = None) -> None:
     """记录 info 级别日志"""
     log_diagnostics('info', event, data)
 
-def log_error(event: str, data: Optional[Dict[str, Any]] = None) -> None:
+def log_error(event: str, data: dict[str, Any] | None = None) -> None:
     """记录 error 级别日志"""
     log_diagnostics('error', event, data)
 
-def log_warn(event: str, data: Optional[Dict[str, Any]] = None) -> None:
+def log_warn(event: str, data: dict[str, Any] | None = None) -> None:
     """记录 warn 级别日志"""
     log_diagnostics('warn', event, data)
 
-def log_debug(event: str, data: Optional[Dict[str, Any]] = None) -> None:
+def log_debug(event: str, data: dict[str, Any] | None = None) -> None:
     """记录 debug 级别日志"""
     log_diagnostics('debug', event, data)

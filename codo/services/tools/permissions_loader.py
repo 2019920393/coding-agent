@@ -13,8 +13,12 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any
 
+from codo.services.tools.permission_rules import (
+    format_permission_rule_value,
+    parse_permission_rule_value,
+)
 from codo.types.permissions import (
     PermissionBehavior,
     PermissionRule,
@@ -22,17 +26,13 @@ from codo.types.permissions import (
     PermissionRuleValue,
     ToolPermissionContext,
 )
-from codo.services.tools.permission_rules import (
-    parse_permission_rule_value,
-    format_permission_rule_value,
-)
 
 # 模块级日志记录器
 logger = logging.getLogger(__name__)
 
 SUPPORTED_RULE_BEHAVIORS = ["allow", "deny", "ask"]
 
-def _get_settings_file_path(source: PermissionRuleSource, cwd: str = "") -> Optional[str]:
+def _get_settings_file_path(source: PermissionRuleSource, cwd: str = "") -> str | None:
     """
     获取设置文件路径
 
@@ -62,7 +62,7 @@ def _get_settings_file_path(source: PermissionRuleSource, cwd: str = "") -> Opti
         # SESSION 来源没有文件，规则存储在运行时内存中
         return None
 
-def _load_settings_json(file_path: str) -> Optional[Dict[str, Any]]:
+def _load_settings_json(file_path: str) -> dict[str, Any] | None:
     """
     加载 settings.json 文件
 
@@ -84,7 +84,7 @@ def _load_settings_json(file_path: str) -> Optional[Dict[str, Any]]:
 
     try:
         # 读取文件内容，使用 utf-8 编码
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             content = f.read().strip()
 
         if not content:
@@ -104,9 +104,9 @@ def _load_settings_json(file_path: str) -> Optional[Dict[str, Any]]:
         return None
 
 def _settings_json_to_rules(
-    data: Optional[Dict[str, Any]],
+    data: dict[str, Any] | None,
     source: PermissionRuleSource,
-) -> List[PermissionRule]:
+) -> list[PermissionRule]:
     """
     将 settings.json 中的 permissions 字段转换为规则列表
 
@@ -134,7 +134,7 @@ def _settings_json_to_rules(
         return []
 
     # 初始化规则列表
-    rules: List[PermissionRule] = []
+    rules: list[PermissionRule] = []
 
     for behavior in SUPPORTED_RULE_BEHAVIORS:
         # 获取该行为对应的规则数组
@@ -167,7 +167,7 @@ def _settings_json_to_rules(
 def load_permission_rules_from_source(
     source: PermissionRuleSource,
     cwd: str = "",
-) -> List[PermissionRule]:
+) -> list[PermissionRule]:
     """
     从指定来源加载权限规则
 
@@ -196,7 +196,7 @@ def load_permission_rules_from_source(
     # 将 JSON 数据解析为规则列表并返回
     return _settings_json_to_rules(data, source)
 
-def load_all_permission_rules(cwd: str = "") -> List[PermissionRule]:
+def load_all_permission_rules(cwd: str = "") -> list[PermissionRule]:
     """
     从所有来源加载权限规则
 
@@ -212,7 +212,7 @@ def load_all_permission_rules(cwd: str = "") -> List[PermissionRule]:
         所有来源的 PermissionRule 列表
     """
     # 初始化规则列表
-    rules: List[PermissionRule] = []
+    rules: list[PermissionRule] = []
 
     # 从项目设置加载（优先级最高）
     rules.extend(load_permission_rules_from_source(
@@ -251,17 +251,17 @@ def build_permission_context_from_disk(
     all_rules = load_all_permission_rules(cwd)
 
     # 初始化三种行为的规则字典，每种行为按来源分组
-    allow_rules: Dict[PermissionRuleSource, List[str]] = {
+    allow_rules: dict[PermissionRuleSource, list[str]] = {
         PermissionRuleSource.PROJECT_SETTINGS: [],
         PermissionRuleSource.USER_SETTINGS: [],
         PermissionRuleSource.SESSION: [],  # SESSION 初始为空，运行时填充
     }
-    deny_rules: Dict[PermissionRuleSource, List[str]] = {
+    deny_rules: dict[PermissionRuleSource, list[str]] = {
         PermissionRuleSource.PROJECT_SETTINGS: [],
         PermissionRuleSource.USER_SETTINGS: [],
         PermissionRuleSource.SESSION: [],
     }
-    ask_rules: Dict[PermissionRuleSource, List[str]] = {
+    ask_rules: dict[PermissionRuleSource, list[str]] = {
         PermissionRuleSource.PROJECT_SETTINGS: [],
         PermissionRuleSource.USER_SETTINGS: [],
         PermissionRuleSource.SESSION: [],
@@ -290,7 +290,7 @@ def build_permission_context_from_disk(
     )
 
 def add_permission_rules_to_settings(
-    rule_values: List[PermissionRuleValue],
+    rule_values: list[PermissionRuleValue],
     rule_behavior: PermissionBehavior,
     source: PermissionRuleSource,
     cwd: str = "",

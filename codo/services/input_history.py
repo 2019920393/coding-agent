@@ -13,14 +13,15 @@ Storage format:
 """
 
 import json
-import os
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, AsyncGenerator
-from uuid import uuid4
+from typing import Any
 
 from codo.utils.config import get_user_dir
+
+logger = logging.getLogger(__name__)
 
 MAX_HISTORY_ITEMS = 100
 MAX_PASTED_CONTENT_LENGTH = 1024
@@ -31,33 +32,33 @@ class PastedContent:
     id: int
     type: str  # 'text' or 'image'
     content: str
-    media_type: Optional[str] = None
-    filename: Optional[str] = None
+    media_type: str | None = None
+    filename: str | None = None
 
 @dataclass
 class StoredPastedContent:
     """Stored paste content - either inline or hash reference"""
     id: int
     type: str
-    content: Optional[str] = None  # Inline content for small pastes
-    content_hash: Optional[str] = None  # Hash reference for large pastes
-    media_type: Optional[str] = None
-    filename: Optional[str] = None
+    content: str | None = None  # Inline content for small pastes
+    content_hash: str | None = None  # Hash reference for large pastes
+    media_type: str | None = None
+    filename: str | None = None
 
 @dataclass
 class HistoryEntry:
     """History entry for display"""
     display: str
-    pasted_contents: Dict[int, PastedContent]
+    pasted_contents: dict[int, PastedContent]
 
 @dataclass
 class LogEntry:
     """Internal log entry format"""
     display: str
-    pasted_contents: Dict[int, StoredPastedContent]
+    pasted_contents: dict[int, StoredPastedContent]
     timestamp: float
     project: str
-    session_id: Optional[str] = None
+    session_id: str | None = None
 
 class InputHistory:
     """
@@ -72,12 +73,20 @@ class InputHistory:
     5. 项目隔离 - 只显示当前项目的历史（对齐 history.ts:191-199）
     """
 
-    def __init__(self, project_root: str, session_id: str, history_file: Optional[Path] = None):
+    def __init__(self, project_root: str, session_id: str, history_file: Path | None = None):
+        """
+        初始化 InputHistory。
+
+        参数:
+            project_root: 当前项目根目录路径，用于隔离不同项目的历史
+            session_id: 当前会话 ID，用于当前会话优先排序
+            history_file: 可选的历史文件路径覆盖（主要用于测试）
+        """
         self.project_root = project_root
         self.session_id = session_id
         self._history_file = history_file  # Allow override for testing
-        self._pending_entries: List[LogEntry] = []
-        self._last_added_entry: Optional[LogEntry] = None
+        self._pending_entries: list[LogEntry] = []
+        self._last_added_entry: LogEntry | None = None
         self._skipped_timestamps: set = set()
         self._ensure_history_file()
 
@@ -94,7 +103,7 @@ class InputHistory:
         if not self.history_file.exists():
             self.history_file.touch(mode=0o600)
 
-    def add_to_history(self, command: str, pasted_contents: Optional[Dict[int, PastedContent]] = None):
+    def add_to_history(self, command: str, pasted_contents: dict[int, PastedContent] | None = None):
         """
         Add command to history.
 
@@ -169,9 +178,9 @@ class InputHistory:
             self._pending_entries.clear()
         except Exception as e:
             # Log error but don't crash
-            print(f"Failed to write history: {e}")
+            logger.warning("Failed to write history: %s", e)
 
-    def get_history(self, max_items: int = MAX_HISTORY_ITEMS) -> List[HistoryEntry]:
+    def get_history(self, max_items: int = MAX_HISTORY_ITEMS) -> list[HistoryEntry]:
         """
         Get history entries for current project, with current session first.
 
@@ -198,7 +207,7 @@ class InputHistory:
         # Then read from disk (newest first)
         if self.history_file.exists():
             try:
-                with open(self.history_file, 'r', encoding='utf-8') as f:
+                with open(self.history_file, encoding='utf-8') as f:
                     lines = f.readlines()
 
                 # Read in reverse order (newest first)
@@ -234,13 +243,13 @@ class InputHistory:
                         continue
 
             except Exception as e:
-                print(f"Failed to read history: {e}")
+                logger.warning("Failed to read history: %s", e)
 
         # Combine: current session first, then other sessions
         result = current_session_entries + other_session_entries
         return result[:max_items]
 
-    def search_history(self, query: str, max_items: int = MAX_HISTORY_ITEMS) -> List[tuple[HistoryEntry, float]]:
+    def search_history(self, query: str, max_items: int = MAX_HISTORY_ITEMS) -> list[tuple[HistoryEntry, float]]:
         """
         Search history with fuzzy matching (for Ctrl+R).
 
@@ -277,7 +286,7 @@ class InputHistory:
         # Search disk entries
         if self.history_file.exists():
             try:
-                with open(self.history_file, 'r', encoding='utf-8') as f:
+                with open(self.history_file, encoding='utf-8') as f:
                     lines = f.readlines()
 
                 for line in reversed(lines):
@@ -307,7 +316,7 @@ class InputHistory:
                         continue
 
             except Exception as e:
-                print(f"Failed to search history: {e}")
+                logger.warning("Failed to search history: %s", e)
 
         return results[:max_items]
 
@@ -343,7 +352,7 @@ class InputHistory:
         self._last_added_entry = None
         self._skipped_timestamps.clear()
 
-    def _dict_to_log_entry(self, entry_dict: Dict[str, Any]) -> LogEntry:
+    def _dict_to_log_entry(self, entry_dict: dict[str, Any]) -> LogEntry:
         """Convert dict to LogEntry"""
         pasted_contents = {}
         for id_str, content_dict in entry_dict.get('pastedContents', {}).items():
@@ -398,7 +407,7 @@ def format_image_ref(id_num: int) -> str:
     """
     return f"[Image #{id_num}]"
 
-def expand_pasted_text_refs(input_text: str, pasted_contents: Dict[int, PastedContent]) -> str:
+def expand_pasted_text_refs(input_text: str, pasted_contents: dict[int, PastedContent]) -> str:
     """
     Replace [Pasted text #N] placeholders with actual content.
 
@@ -415,6 +424,15 @@ def expand_pasted_text_refs(input_text: str, pasted_contents: Dict[int, PastedCo
     pattern = r'\[Pasted text #(\d+)(?:\s+\+\d+\s+lines)?\]'
 
     def replace_ref(match):
+        """
+        正则替换回调：将 [Pasted text #N] 占位符替换为实际粘贴内容。
+
+        参数:
+            match: 正则匹配对象，group(1) 为粘贴 ID
+
+        返回:
+            str: 实际内容文本，若未找到则返回原始占位符
+        """
         paste_id = int(match.group(1))
         content = pasted_contents.get(paste_id)
         if content and content.type == 'text':

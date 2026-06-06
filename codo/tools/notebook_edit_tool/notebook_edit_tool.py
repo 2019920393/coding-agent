@@ -10,25 +10,25 @@ NotebookEditTool - Jupyter Notebook 单元格编辑工具
 6. 返回操作结果
 """
 
-import os
 import json
-import re
+import os
 import random
+import re
 import string
-from typing import Optional, Callable, Any, Literal
+from collections.abc import Callable
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from ..base import Tool, ToolUseContext
-from ..types import ToolResult, ValidationResult, ToolCallProgress
-from ...utils.path import expandPath
-from .prompt import NOTEBOOK_EDIT_TOOL_NAME, DESCRIPTION, PROMPT
+from ..base import Tool
+from ..types import ToolCallProgress, ToolResult, ValidationResult
+from .prompt import DESCRIPTION, NOTEBOOK_EDIT_TOOL_NAME, PROMPT
 
 # ============================================================================
 # 辅助函数
 # ============================================================================
 
-def parse_cell_id(cell_id: str) -> Optional[int]:
+def parse_cell_id(cell_id: str) -> int | None:
     """
     解析 "cell-N" 格式的 cell ID，返回 N（0-indexed）
 
@@ -84,7 +84,7 @@ class NotebookEditToolInput(BaseModel):
     )
     # cell ID（可选）：用于定位要编辑的 cell，支持实际 ID 或 "cell-N" 格式
     # insert 模式下，新 cell 会插入到此 ID 对应 cell 之后；未指定时插入到开头
-    cell_id: Optional[str] = Field(
+    cell_id: str | None = Field(
         default=None,
         description=(
             "The ID of the cell to edit. When inserting a new cell, the new cell "
@@ -96,7 +96,7 @@ class NotebookEditToolInput(BaseModel):
         description="The new source for the cell"
     )
     # cell 类型（可选）：code 或 markdown。insert 模式下必须指定
-    cell_type: Optional[Literal["code", "markdown"]] = Field(
+    cell_type: Literal["code", "markdown"] | None = Field(
         default=None,
         description=(
             "The type of the cell (code or markdown). If not specified, it defaults "
@@ -104,7 +104,7 @@ class NotebookEditToolInput(BaseModel):
         )
     )
     # 编辑模式（可选）：replace / insert / delete，默认 replace
-    edit_mode: Optional[Literal["replace", "insert", "delete"]] = Field(
+    edit_mode: Literal["replace", "insert", "delete"] | None = Field(
         default=None,
         description="The type of edit to make (replace, insert, delete). Defaults to replace."
     )
@@ -123,7 +123,7 @@ class NotebookEditToolOutput(BaseModel):
     # 写入 cell 的新源代码
     new_source: str = Field(description="The new source code that was written to the cell")
     # 被编辑的 cell ID
-    cell_id: Optional[str] = Field(default=None, description="The ID of the cell that was edited")
+    cell_id: str | None = Field(default=None, description="The ID of the cell that was edited")
     # cell 类型
     cell_type: str = Field(description="The type of the cell")
     # notebook 的编程语言
@@ -131,7 +131,7 @@ class NotebookEditToolOutput(BaseModel):
     # 使用的编辑模式
     edit_mode: str = Field(description="The edit mode that was used")
     # 错误信息（操作失败时）
-    error: Optional[str] = Field(default=None, description="Error message if the operation failed")
+    error: str | None = Field(default=None, description="Error message if the operation failed")
     # notebook 文件路径（用于归因追踪）
     notebook_path: str = Field(description="The path to the notebook file")
     # 修改前的原始 notebook 内容
@@ -257,7 +257,7 @@ class NotebookEditTool(Tool[NotebookEditToolInput, NotebookEditToolOutput, None]
         """
         return False
 
-    def get_tool_use_summary(self, input_data: Optional[NotebookEditToolInput] = None) -> Optional[str]:
+    def get_tool_use_summary(self, input_data: NotebookEditToolInput | None = None) -> str | None:
         """
         获取工具使用摘要
 
@@ -269,7 +269,7 @@ class NotebookEditTool(Tool[NotebookEditToolInput, NotebookEditToolOutput, None]
         # 提取文件名作为摘要
         return os.path.basename(input_data.notebook_path)
 
-    def get_activity_description(self, input_data: Optional[NotebookEditToolInput] = None) -> Optional[str]:
+    def get_activity_description(self, input_data: NotebookEditToolInput | None = None) -> str | None:
         """
         获取活动描述（用于进度显示）
 
@@ -281,7 +281,7 @@ class NotebookEditTool(Tool[NotebookEditToolInput, NotebookEditToolOutput, None]
             return f"Editing notebook {summary}"
         return "Editing notebook"
 
-    def get_path(self, input_data: NotebookEditToolInput) -> Optional[str]:
+    def get_path(self, input_data: NotebookEditToolInput) -> str | None:
         """
         获取操作的文件路径
 
@@ -291,7 +291,7 @@ class NotebookEditTool(Tool[NotebookEditToolInput, NotebookEditToolOutput, None]
     async def validate_input(
         self,
         input_data: NotebookEditToolInput,
-        context: ToolUseContext
+        context: dict[str, Any]
     ) -> ValidationResult:
         """
         验证输入参数
@@ -354,7 +354,7 @@ class NotebookEditTool(Tool[NotebookEditToolInput, NotebookEditToolOutput, None]
 
         # 读取文件内容并验证 JSON 格式
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 content = f.read()
         except Exception:
             return ValidationResult(
@@ -414,10 +414,10 @@ class NotebookEditTool(Tool[NotebookEditToolInput, NotebookEditToolOutput, None]
     async def call(
         self,
         input_data: NotebookEditToolInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool: Callable,
         parent_message: Any,
-        on_progress: Optional[Callable[[ToolCallProgress], None]] = None
+        on_progress: Callable[[ToolCallProgress], None] | None = None
     ) -> ToolResult[NotebookEditToolOutput]:
         """
         执行 Notebook 编辑操作
@@ -449,7 +449,7 @@ class NotebookEditTool(Tool[NotebookEditToolInput, NotebookEditToolOutput, None]
 
         try:
             # 读取 notebook 文件内容
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 content = f.read()
 
             # 解析 JSON（不使用缓存，因为后续会修改 notebook 对象）

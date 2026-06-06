@@ -4,24 +4,22 @@ Prompt 系统测试
 测试 Prompt 装配系统的各个组件。
 """
 
-import pytest
-import asyncio
-import os
-import tempfile
-from pathlib import Path
 
-from codo.services.prompt.context import ContextProvider, get_context_for_cwd
-from codo.services.prompt.builder import PromptBuilder, build_system_prompt_for_cwd
-from codo.services.prompt.tools import tool_to_api_schema, tools_to_api_schemas
-from codo.services.prompt.messages import (
-    normalize_messages_for_api,
-    ensure_alternating_messages,
-    add_cache_breakpoints,
-    create_user_message,
-    create_assistant_message,
-)
+import pytest
+
 from codo.services.prompt.assembler import APIRequestAssembler, assemble_api_request
+from codo.services.prompt.builder import PromptBuilder
+from codo.services.prompt.context import ContextProvider
+from codo.services.prompt.messages import (
+    add_cache_breakpoints,
+    create_assistant_message,
+    create_user_message,
+    ensure_alternating_messages,
+    normalize_messages_for_api,
+)
+from codo.services.prompt.tools import tool_to_api_schema, tools_to_api_schemas
 from codo.tools_registry import get_all_tools
+
 
 class TestContextProvider:
     """测试上下文提供者"""

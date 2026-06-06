@@ -5,22 +5,19 @@
 
 参考：src/context.ts
 - getGitStatus(): 并行执行 5 个 git 命令，返回格式化字符串
-- getSystemContext(): 返回 gitStatus 和 cacheBreaker
+- getSystemContext(): 返回 gitStatus
 - getUserContext(): 返回 codoMd 和 currentDate
 - 使用 memoize 缓存，整个会话期间只执行一次
 """
 
-import os
-import subprocess
 import asyncio
-from typing import Optional, Dict
+import os
+import time
 from datetime import datetime
 from pathlib import Path
-from functools import lru_cache
-import time
 
-from codo.utils.diagnostics import log_info, log_error
 from codo.services.prompt.codomd import get_codo_mds
+from codo.utils.diagnostics import log_error, log_info
 
 MAX_STATUS_CHARS = 2000
 
@@ -94,7 +91,7 @@ async def _get_default_branch(cwd: str) -> str:
     # 策略 3: 最终回退
     return "main"
 
-async def _get_git_status_async(cwd: str) -> Optional[str]:
+async def _get_git_status_async(cwd: str) -> str | None:
     """
     异步获取 Git 状态（会话开始时的快照）
 
@@ -195,9 +192,9 @@ async def _get_git_status_async(cwd: str) -> Optional[str]:
         return None
 
 # 缓存包装器（同步接口）
-_git_status_cache: Dict[str, Optional[str]] = {}
+_git_status_cache: dict[str, str | None] = {}
 
-def get_git_status(cwd: str) -> Optional[str]:
+def get_git_status(cwd: str) -> str | None:
     """
     获取 Git 状态（同步接口，内部使用异步实现）
 
@@ -214,7 +211,7 @@ def get_git_status(cwd: str) -> Optional[str]:
     try:
         # 尝试获取当前运行的事件循环
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             # 如果事件循环已在运行，在线程池中执行
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -232,15 +229,14 @@ def get_git_status(cwd: str) -> Optional[str]:
     return result
 
 # 系统上下文缓存
-_system_context_cache: Dict[str, Dict[str, str]] = {}
+_system_context_cache: dict[str, dict[str, str]] = {}
 
-def get_system_context(cwd: str) -> Dict[str, str]:
+def get_system_context(cwd: str) -> dict[str, str]:
     """
     获取系统上下文（会话期间缓存复用）
 
     包含：
     - gitStatus: Git 状态快照
-    - cacheBreaker: 缓存破坏器（如果启用）
 
     Args:
         cwd: 工作目录
@@ -275,9 +271,9 @@ def get_system_context(cwd: str) -> Dict[str, str]:
     return context
 
 # 用户上下文缓存
-_user_context_cache: Dict[str, Dict[str, str]] = {}
+_user_context_cache: dict[str, dict[str, str]] = {}
 
-def get_user_context(cwd: str) -> Dict[str, str]:
+def get_user_context(cwd: str) -> dict[str, str]:
     """
     获取用户上下文（会话期间缓存复用）
 
@@ -322,7 +318,7 @@ def get_user_context(cwd: str) -> Dict[str, str]:
     try:
         from codo.services.memory.paths import ensure_memory_dir
         from codo.services.memory.scan import load_memory_index
-        memory_dir = str(ensure_memory_dir(cwd))
+        memory_dir = str(ensure_memory_dir())
         index_content = load_memory_index(cwd)
         memory_context = None
         if index_content:
@@ -382,18 +378,25 @@ class ContextProvider:
     """
 
     def __init__(self, cwd: str):
+        """
+        初始化 ContextProvider（兼容层）。
+
+        参数:
+            cwd: 工作目录路径
+        """
         self.cwd = cwd
 
     def is_git_repository(self) -> bool:
         """检查是否为 Git 仓库"""
-        git_status = get_git_status(self.cwd)
-        return git_status is not None
+        return (Path(self.cwd) / ".git").exists()
 
-    def get_git_status(self) -> Optional[str]:
+    def get_git_status(self) -> str | None:
         """获取 Git 状态"""
+        if not self.is_git_repository():
+            return None
         return get_git_status(self.cwd)
 
-    def read_codo_md(self) -> Optional[str]:
+    def read_codo_md(self) -> str | None:
         """读取 CODO.md"""
         from codo.services.prompt.codomd import get_codo_mds
         return get_codo_mds(self.cwd)
@@ -418,7 +421,7 @@ class ContextProvider:
 
         return '\n\n'.join(parts) if parts else ''
 
-def get_context_for_cwd(cwd: str) -> Dict[str, str]:
+def get_context_for_cwd(cwd: str) -> dict[str, str]:
     """
     获取指定工作目录的完整上下文（兼容函数）
 

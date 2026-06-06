@@ -10,21 +10,17 @@
 
 """
 
-import asyncio
-import json
 import logging
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from anthropic import AsyncAnthropic
 
 from codo.services.memory.paths import (
-    ensure_memory_dir,
-    get_project_memory_dir,
-    is_memory_path,
     ENTRYPOINT_NAME,
+    ensure_memory_dir,
+    is_memory_path,
 )
 from codo.services.memory.prompts import build_extract_prompt
 from codo.services.memory.scan import (
@@ -44,7 +40,7 @@ class MemoryExtractionState:
 
     # 上一次已处理消息的 UUID。
     # 作为游标使用，确保每次只处理新增消息。
-    last_message_uuid: Optional[str] = None
+    last_message_uuid: str | None = None
 
     # 抽取执行中标记，用于防止重叠运行。
     in_progress: bool = False
@@ -56,11 +52,11 @@ class MemoryExtractionState:
     extraction_interval: int = 1
 
     # 最近一次抽取中写入的文件路径列表。
-    last_written_paths: List[str] = field(default_factory=list)
+    last_written_paths: list[str] = field(default_factory=list)
 
 def _count_model_visible_since(
-    messages: List[Dict[str, Any]],
-    since_uuid: Optional[str],
+    messages: list[dict[str, Any]],
+    since_uuid: str | None,
 ) -> int:
     """
     统计给定 UUID 之后的模型可见消息数量（user/assistant）。
@@ -92,9 +88,70 @@ def _count_model_visible_since(
 
     return count
 
+def _flatten_block_text(content: Any) -> str:
+    """把单条消息的 content 压成纯文本：text 块原样、tool_use/tool_result 标注后丢弃。"""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for block in content:
+        btype = block.get("type")
+        if btype == "text":
+            text = block.get("text", "").strip()
+            if text:
+                parts.append(text)
+        elif btype == "tool_use":
+            parts.append(f"[tool_use: {block.get('name', '?')}]")
+        elif btype == "tool_result":
+            parts.append("[tool_result]")
+    return "\n".join(parts)
+
+def _format_recent_conversation(
+    messages: list[dict[str, Any]],
+    since_uuid: str | None,
+    max_chars: int = 12_000,
+) -> str:
+    """
+    把游标之后的 user/assistant 消息扁平化为一段可读文本，供 extract 子 agent 阅读。
+
+    超过 max_chars 时从尾部保留最后 max_chars 字符，最近的对话最重要。
+    """
+    found_start = since_uuid is None
+    chunks: list[str] = []
+    for m in messages:
+        if not found_start:
+            if m.get("uuid") == since_uuid:
+                found_start = True
+            continue
+        role = m.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        text = _flatten_block_text(m.get("content", ""))
+        if not text:
+            continue
+        chunks.append(f"### {role}\n{text}")
+
+    if not found_start:
+        # UUID 找不到时回退为全部消息。
+        chunks = []
+        for m in messages:
+            role = m.get("role")
+            if role not in ("user", "assistant"):
+                continue
+            text = _flatten_block_text(m.get("content", ""))
+            if not text:
+                continue
+            chunks.append(f"### {role}\n{text}")
+
+    transcript = "\n\n".join(chunks)
+    if len(transcript) > max_chars:
+        transcript = "...(truncated)...\n\n" + transcript[-max_chars:]
+    return transcript
+
 def _has_memory_writes_since(
-    messages: List[Dict[str, Any]],
-    since_uuid: Optional[str],
+    messages: list[dict[str, Any]],
+    since_uuid: str | None,
     cwd: str,
 ) -> bool:
     """
@@ -119,7 +176,7 @@ def _has_memory_writes_since(
             if block.get("name") not in ("Write", "Edit"):
                 continue
             file_path = (block.get("input") or {}).get("file_path", "")
-            if file_path and is_memory_path(file_path, cwd):
+            if file_path and is_memory_path(file_path):
                 return True
     return False
 
@@ -195,9 +252,9 @@ def _execute_memory_edit(
         return False
 
 def _process_tool_calls(
-    content: List[Dict[str, Any]],
+    content: list[dict[str, Any]],
     memory_dir: str,
-) -> List[str]:
+) -> list[str]:
     """
     处理抽取 agent 响应中的 `tool_use` 块。
 
@@ -245,7 +302,7 @@ async def _run_extraction_agent(
     user_prompt: str,
     memory_dir: str,
     max_turns: int = 5,
-) -> List[str]:
+) -> list[str]:
     """
     运行抽取 agent：调用模型、执行工具、循环迭代。
 
@@ -256,7 +313,7 @@ async def _run_extraction_agent(
     4. 持续迭代，直到模型停止使用工具或达到 `max_turns`
 
     参考 `runForkedAgent()` 的整体模式，但这里做了简化：
-    不共享 prompt cache，不依赖复杂的 ToolUseContext，只做直接 API 调用。
+    不共享 prompt cache，只做直接 API 调用。
 
     Args:
         client: 客户端
@@ -357,6 +414,16 @@ async def _run_extraction_agent(
                     "input": block.input,
                 })
 
+        _texts = [b["text"] for b in content_blocks if b["type"] == "text"]
+        _tools = [(b["name"], b.get("input", {})) for b in content_blocks if b["type"] == "tool_use"]
+        logger.info(
+            f"[extractMemories] turn {turn} stop={response.stop_reason} "
+            f"tool_uses={[t[0] for t in _tools]} "
+            f"text={(' | '.join(_texts))[:600]!r}"
+        )
+        for tn, ti in _tools:
+            logger.info(f"[extractMemories]   tool_use {tn} input={str(ti)[:400]}")
+
         # 将 assistant 响应追加到对话上下文。
         messages.append({"role": "assistant", "content": content_blocks})
 
@@ -434,10 +501,10 @@ async def _run_extraction_agent(
 async def extract_memories(
     client: AsyncAnthropic,
     model: str,
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     cwd: str,
     state: MemoryExtractionState,
-) -> List[str]:
+) -> list[str]:
     """
     在 query loop 结束后执行记忆抽取。
 
@@ -493,21 +560,37 @@ async def extract_memories(
         )
 
         # 确保 memory 目录存在。
-        memory_dir = str(ensure_memory_dir(cwd))
+        memory_dir = str(ensure_memory_dir())
 
         # 扫描现有记忆文件并生成清单。
         headers = scan_memory_files(memory_dir)
         existing_memories = format_memory_manifest(headers)
 
         # 构建抽取提示词。
-        user_prompt = build_extract_prompt(
+        extract_instructions = build_extract_prompt(
             new_message_count=new_message_count,
             existing_memories=existing_memories,
             memory_dir=memory_dir,
         )
 
+        # 把游标之后的主对话扁平化为可读文本，作为 extract agent 的上下文。
+        # 之前这里只传 extract_instructions，子 agent 看不到任何真实对话，
+        # 总是得出"没有可保存内容"的错误结论。
+        recent_conversation = _format_recent_conversation(
+            messages, since_uuid=state.last_message_uuid
+        )
+        if recent_conversation:
+            user_prompt = (
+                f"## Recent conversation (most recent {new_message_count} messages)\n\n"
+                f"{recent_conversation}\n\n"
+                f"---\n\n"
+                f"{extract_instructions}"
+            )
+        else:
+            user_prompt = extract_instructions
+
         # 构建一个最小系统提示词。
-        # 对话历史会通过 messages 传入，使 agent 能看到最近消息。
+        # 主对话已经被扁平化拼进 user_prompt 头部。
         system_prompt = (
             "You are the memory extraction subagent. "
             "Your job is to analyze the recent conversation and save durable memories. "

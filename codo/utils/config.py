@@ -14,9 +14,9 @@
 import json
 import logging
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # 模块级日志记录器，用于记录配置读写过程中的警告和错误
 logger = logging.getLogger(__name__)
@@ -114,7 +114,7 @@ class GlobalConfig:
     """
     # ---- 模型配置 ----
     # 默认模型名称，None 表示使用代码内置默认值（如 claude-sonnet-4-20250514）
-    model: Optional[str] = None
+    model: str | None = None
 
     # ---- 功能开关 ----
     # 是否启用自动压缩
@@ -124,7 +124,7 @@ class GlobalConfig:
 
     # ---- 语言偏好 ----
     # 语言偏好，如 "zh-CN"、"English"，None 表示跟随系统
-    language: Optional[str] = None
+    language: str | None = None
 
     # ---- 主题 ----
     # 终端主题，支持 dark/light
@@ -140,13 +140,15 @@ class GlobalConfig:
 
     # ---- 环境变量 ----
     # 额外注入的环境变量字典，会在工具执行时合并到进程环境
-    env: Dict[str, str] = field(default_factory=dict)
+    env: dict[str, str] = field(default_factory=dict)
 
     # ---- 自定义 API 配置 ----
     # 自定义 API base URL，用于代理或私有部署场景
-    api_base_url: Optional[str] = None
+    api_base_url: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    plansDirectory: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         """
         转换为字典（用于 JSON 序列化）
 
@@ -164,7 +166,7 @@ class GlobalConfig:
         return {k: v for k, v in d.items() if v is not None}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "GlobalConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "GlobalConfig":
         """
         从字典创建配置对象
 
@@ -190,7 +192,7 @@ class GlobalConfig:
 # 配置读写函数
 # ============================================================================
 
-def _load_json_file(file_path: Path) -> Optional[Dict[str, Any]]:
+def _load_json_file(file_path: Path) -> dict[str, Any] | None:
     """
     加载 JSON 配置文件（内部辅助函数）
 
@@ -225,7 +227,7 @@ def _load_json_file(file_path: Path) -> Optional[Dict[str, Any]]:
         logger.warning(f"加载配置文件失败 {file_path}: {e}")
         return None
 
-def _save_json_file(file_path: Path, data: Dict[str, Any]) -> bool:
+def _save_json_file(file_path: Path, data: dict[str, Any]) -> bool:
     """
     保存 JSON 配置文件（内部辅助函数）
 
@@ -292,7 +294,7 @@ def save_global_config(config: GlobalConfig) -> bool:
     # 转换为字典后写入文件
     return _save_json_file(get_config_file(), config.to_dict())
 
-def get_project_config(cwd: str) -> Dict[str, Any]:
+def get_project_config(cwd: str) -> dict[str, Any]:
     """
     获取项目配置
 
@@ -310,7 +312,7 @@ def get_project_config(cwd: str) -> Dict[str, Any]:
     data = _load_json_file(get_project_config_file(cwd))
     return data or {}
 
-def save_project_config(cwd: str, config: Dict[str, Any]) -> bool:
+def save_project_config(cwd: str, config: dict[str, Any]) -> bool:
     """
     保存项目配置
 
@@ -333,7 +335,7 @@ def save_project_config(cwd: str, config: Dict[str, Any]) -> bool:
     # 写入合并后的配置
     return _save_json_file(get_project_config_file(cwd), merged)
 
-def get_merged_config(cwd: str) -> Dict[str, Any]:
+def get_merged_config(cwd: str) -> dict[str, Any]:
     """
     获取合并后的配置（全局 → 项目 → 环境变量）
 
@@ -369,7 +371,7 @@ def get_merged_config(cwd: str) -> Dict[str, Any]:
 
     return merged
 
-def get_effective_model(cwd: str = "") -> Optional[str]:
+def get_effective_model(cwd: str = "") -> str | None:
     """
     获取有效的模型名称（按优先级查找）
 

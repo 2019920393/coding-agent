@@ -7,10 +7,10 @@
 import json
 import re
 from pathlib import Path
-from typing import Optional, List
 
 from codo.session.storage import list_session_files
 from codo.session.types import SessionInfo
+
 
 def validate_uuid(value: str) -> bool:
     """
@@ -41,7 +41,7 @@ def validate_uuid(value: str) -> bool:
 
     return bool(uuid_pattern.match(value))
 
-def load_session_metadata(file_path: str) -> Optional[SessionInfo]:
+def load_session_metadata(file_path: str) -> SessionInfo | None:
     """
     加载会话元数据（轻量级读取）
 
@@ -70,7 +70,7 @@ def load_session_metadata(file_path: str) -> Optional[SessionInfo]:
         session_id = path.stem
 
         # 读取文件内容
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             lines = f.readlines()
 
         if not lines:
@@ -132,7 +132,7 @@ def load_session_metadata(file_path: str) -> Optional[SessionInfo]:
     except (OSError, json.JSONDecodeError, KeyError):
         return None
 
-def get_last_session(project_dir: str) -> Optional[SessionInfo]:
+def get_last_session(project_dir: str) -> SessionInfo | None:
     """
     获取最近修改的会话
 
@@ -162,7 +162,7 @@ def get_last_session(project_dir: str) -> Optional[SessionInfo]:
     # 加载会话元数据
     return load_session_metadata(file_path)
 
-def list_all_sessions(project_dir: str) -> List[SessionInfo]:
+def list_all_sessions(project_dir: str) -> list[SessionInfo]:
     """
     列出项目目录下的所有会话
 
@@ -198,7 +198,7 @@ def search_sessions_by_title(
     title: str,
     project_dir: str,
     exact: bool = True
-) -> List[SessionInfo]:
+) -> list[SessionInfo]:
     """
     按标题搜索会话
 
@@ -238,7 +238,7 @@ def search_sessions_by_title(
 
     return matches
 
-def find_session_by_id(session_id: str, project_dir: str) -> Optional[SessionInfo]:
+def find_session_by_id(session_id: str, project_dir: str) -> SessionInfo | None:
     """
     根据会话 ID 查找会话
 

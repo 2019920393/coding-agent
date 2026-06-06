@@ -6,11 +6,13 @@ MCP 工具包装器
 3. 在运行时为每个 MCP 服务器工具创建子类实例
 """
 
-from typing import Any, Dict, Optional
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any
 
-from codo.tools.base import Tool, ToolUseContext
+from pydantic import BaseModel, ConfigDict, Field
+
+from codo.tools.base import Tool
 from codo.tools.types import ToolResult
+
 
 class MCPToolInput(BaseModel):
     """
@@ -54,7 +56,7 @@ class MCPToolBase(Tool[MCPToolInput, MCPToolOutput, None]):
         self,
         content: Any,
         tool_use_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         将工具结果映射为 API 格式
 
@@ -68,7 +70,7 @@ class MCPToolBase(Tool[MCPToolInput, MCPToolOutput, None]):
     async def call(
         self,
         input_data: MCPToolInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         on_progress=None
     ) -> ToolResult[MCPToolOutput]:
         """
@@ -138,7 +140,7 @@ def create_mcp_tool_instance(
     call_func,
     input_schema: type[BaseModel] = MCPToolInput,
     output_schema: type[BaseModel] = MCPToolOutput,
-    mcp_info: Optional[Dict[str, Any]] = None,
+    mcp_info: dict[str, Any] | None = None,
 ) -> Tool:
     """
     创建 MCP 工具实例

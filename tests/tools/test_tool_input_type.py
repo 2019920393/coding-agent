@@ -1,6 +1,10 @@
 """测试 SDK 在流式响应中 tool_use.input 的类型"""
 import asyncio
+
+import pytest
 from anthropic import AsyncAnthropic
+
+pytestmark = pytest.mark.skip(reason="diagnostic real API probe")
 
 async def test_tool_input_type():
     client = AsyncAnthropic(api_key="test-key")

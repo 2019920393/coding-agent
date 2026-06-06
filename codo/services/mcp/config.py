@@ -9,21 +9,24 @@ MCP 配置管理
 """
 
 import json
-import os
+import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .types import MCPTransportType
+
+logger = logging.getLogger(__name__)
+
 
 class MCPServerConfig(BaseModel):
     """MCP 服务器配置"""
 
     command: str = Field(..., description="启动命令（stdio 模式）")
-    args: List[str] = Field(default_factory=list, description="命令参数")
-    env: Dict[str, str] = Field(default_factory=dict, description="环境变量")
+    args: list[str] = Field(default_factory=list, description="命令参数")
+    env: dict[str, str] = Field(default_factory=dict, description="环境变量")
     transport: MCPTransportType = Field(default=MCPTransportType.STDIO, description="传输类型")
-    url: Optional[str] = Field(default=None, description="服务器 URL（SSE/HTTP/WS 模式）")
+    url: str | None = Field(default=None, description="服务器 URL（SSE/HTTP/WS 模式）")
     disabled: bool = Field(default=False, description="是否禁用")
 
     @field_validator("command")
@@ -39,7 +42,7 @@ class MCPConfig(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    mcpServers: Dict[str, MCPServerConfig] = Field(
+    mcpServers: dict[str, MCPServerConfig] = Field(
         default_factory=dict,
         description="MCP 服务器配置字典"
     )
@@ -62,9 +65,9 @@ class MCPConfigManager:
             cwd: 当前工作目录
         """
         self.cwd = Path(cwd)
-        self._config: Optional[MCPConfig] = None
+        self._config: MCPConfig | None = None
 
-    def get_config_paths(self) -> List[Path]:
+    def get_config_paths(self) -> list[Path]:
         """
         获取配置文件路径列表（按优先级排序）
 
@@ -92,7 +95,7 @@ class MCPConfigManager:
 
         return paths
 
-    def _find_project_root(self) -> Optional[Path]:
+    def _find_project_root(self) -> Path | None:
         """
         查找项目根目录（包含 .git 的目录）
 
@@ -116,27 +119,27 @@ class MCPConfigManager:
         if self._config is not None:
             return self._config
 
-        merged_servers: Dict[str, MCPServerConfig] = {}
+        merged_servers: dict[str, MCPServerConfig] = {}
 
         # 按优先级反向加载（低优先级先加载，高优先级覆盖）
         config_paths = list(reversed(self.get_config_paths()))
 
         for config_path in config_paths:
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with open(config_path, encoding="utf-8") as f:
                     data = json.load(f)
                     config = MCPConfig(**data)
                     # 合并服务器配置
                     merged_servers.update(config.mcpServers)
             except Exception as e:
                 # 配置文件解析失败，跳过
-                print(f"警告：无法加载配置文件 {config_path}: {e}")
+                logger.warning("无法加载配置文件 %s: %s", config_path, e)
                 continue
 
         self._config = MCPConfig(mcpServers=merged_servers)
         return self._config
 
-    def get_server_config(self, name: str) -> Optional[MCPServerConfig]:
+    def get_server_config(self, name: str) -> MCPServerConfig | None:
         """
         获取指定服务器的配置
 
@@ -149,7 +152,7 @@ class MCPConfigManager:
         config = self.load_config()
         return config.mcpServers.get(name)
 
-    def list_servers(self) -> Dict[str, MCPServerConfig]:
+    def list_servers(self) -> dict[str, MCPServerConfig]:
         """
         列出所有服务器配置
 
@@ -193,8 +196,8 @@ class MCPConfigManager:
         self,
         name: str,
         command: str,
-        args: Optional[List[str]] = None,
-        env: Optional[Dict[str, str]] = None,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
         scope: str = "user"
     ) -> None:
         """

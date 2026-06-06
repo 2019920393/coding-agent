@@ -1,7 +1,8 @@
 """TodoWriteTool 的类型定义"""
 from enum import Enum
-from typing import List
+
 from pydantic import BaseModel, Field
+
 
 class TodoStatus(str, Enum):
     """任务状态枚举"""
@@ -17,10 +18,10 @@ class TodoItem(BaseModel):
 
 class TodoWriteInput(BaseModel):
     """TodoWriteTool 输入"""
-    todos: List[TodoItem] = Field(..., description="更新后的任务列表")
+    todos: list[TodoItem] = Field(..., description="更新后的任务列表")
 
 class TodoWriteOutput(BaseModel):
     """TodoWriteTool 输出"""
-    oldTodos: List[TodoItem] = Field(..., description="更新前的任务列表")
-    newTodos: List[TodoItem] = Field(..., description="更新后的任务列表")
+    oldTodos: list[TodoItem] = Field(..., description="更新前的任务列表")
+    newTodos: list[TodoItem] = Field(..., description="更新后的任务列表")
     verificationNudgeNeeded: bool = Field(default=False, description="是否需要验证提醒")

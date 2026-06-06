@@ -3,10 +3,12 @@
 
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from codo.query_engine import QueryEngine
-from codo.services.mcp import MCPClientManager
+
 
 @pytest.fixture
 def query_engine():

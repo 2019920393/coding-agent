@@ -4,14 +4,14 @@
 """
 
 import json
-import os
 import tempfile
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-from codo.session.storage import SessionStorage, SessionManager
+from codo.session.storage import SessionManager, SessionStorage
+
 
 @pytest.fixture
 def temp_session_dir(monkeypatch):
@@ -73,7 +73,7 @@ async def test_session_metadata(temp_session_dir):
     storage.save_summary("This is a test session")
 
     # 验证文件内容
-    with open(storage.session_file, "r", encoding="utf-8") as f:
+    with open(storage.session_file, encoding="utf-8") as f:
         lines = f.readlines()
 
     assert len(lines) == 3
@@ -170,7 +170,7 @@ async def test_ai_title_vs_user_title(temp_session_dir):
     storage.save_title("User Custom Title", source="user")
 
     # 验证文件内容
-    with open(storage.session_file, "r", encoding="utf-8") as f:
+    with open(storage.session_file, encoding="utf-8") as f:
         lines = f.readlines()
 
     assert len(lines) == 2
@@ -209,7 +209,7 @@ async def test_message_chain_with_parent_uuid(temp_session_dir):
     await storage.record_message(child_message, parent_uuid=parent_uuid)
 
     # 验证文件内容
-    with open(storage.session_file, "r", encoding="utf-8") as f:
+    with open(storage.session_file, encoding="utf-8") as f:
         lines = f.readlines()
 
     assert len(lines) == 2

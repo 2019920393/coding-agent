@@ -22,10 +22,13 @@ AbortController - 用户中断处理机制
 - WeakRef: 使用弱引用避免循环引用导致的内存泄漏
 """
 
-import asyncio
+import logging
 import weakref
-from typing import Callable, Optional, Literal, Set
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 # 中断原因类型
 AbortReason = Literal["interrupt", "abort"]
@@ -50,10 +53,10 @@ class AbortController:
     """
 
     aborted: bool = field(default=False, init=False)
-    reason: Optional[AbortReason] = field(default=None, init=False)
-    _callbacks: Set[Callable[[AbortReason], None]] = field(default_factory=set, init=False)
+    reason: AbortReason | None = field(default=None, init=False)
+    _callbacks: set[Callable[[AbortReason], None]] = field(default_factory=set, init=False)
     _children: list = field(default_factory=list, init=False)  # 使用 list 而非 Set
-    _parent: Optional[weakref.ref] = field(default=None, init=False)
+    _parent: weakref.ref | None = field(default=None, init=False)
 
     def abort(self, reason: AbortReason = "abort") -> None:
         """
@@ -80,7 +83,7 @@ class AbortController:
                 callback(reason)
             except Exception as e:
                 # 回调异常不应该阻止其他回调执行
-                print(f"Warning: AbortController callback raised exception: {e}")
+                logger.warning("AbortController callback raised exception: %s", e)
 
         # 递归中断所有子 AbortController
         for child_ref in list(self._children):
@@ -112,7 +115,7 @@ class AbortController:
             try:
                 callback(self.reason)
             except Exception as e:
-                print(f"Warning: AbortController callback raised exception: {e}")
+                logger.warning("AbortController callback raised exception: %s", e)
             return lambda: None
 
         # 添加回调到列表
@@ -120,6 +123,7 @@ class AbortController:
 
         # 返回取消注册函数
         def unregister():
+            """取消注册此回调，从 _callbacks 集合中移除。"""
             self._callbacks.discard(callback)
 
         return unregister
@@ -158,7 +162,7 @@ class AbortController:
         """
         return self.aborted
 
-    def get_reason(self) -> Optional[AbortReason]:
+    def get_reason(self) -> AbortReason | None:
         """
         获取中断原因
 
@@ -180,16 +184,21 @@ class AbortController:
             raise AbortedError(self.reason)
 
     def __repr__(self) -> str:
+        """返回 AbortController 的调试字符串表示。"""
         return f"AbortController(aborted={self.aborted}, reason={self.reason})"
 
 class AbortedError(Exception):
     """
-    中断异常
-
-    当 AbortController 被中断时抛出此异常
+    中断异常，当 AbortController 被中断时抛出。
     """
 
-    def __init__(self, reason: Optional[AbortReason] = None):
+    def __init__(self, reason: AbortReason | None = None):
+        """
+        初始化中断异常。
+
+        参数:
+            reason: 中断原因，如 "interrupt" 或 "abort"
+        """
         self.reason = reason
         super().__init__(f"Operation aborted: {reason}")
 
@@ -201,7 +210,7 @@ REJECT_MESSAGE = "User interrupted"
 CANCEL_MESSAGE = "Operation cancelled"
 """操作取消消息（用于 'abort' 原因）"""
 
-def get_abort_message(reason: Optional[AbortReason]) -> str:
+def get_abort_message(reason: AbortReason | None) -> str:
     """
     根据中断原因获取对应的消息
 

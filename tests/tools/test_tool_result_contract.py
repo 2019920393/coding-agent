@@ -1,4 +1,3 @@
-import pytest
 
 from codo.tools.receipts import (
     CommandReceipt,
@@ -7,6 +6,7 @@ from codo.tools.receipts import (
     render_receipt_for_model,
 )
 from codo.tools.types import ToolResult
+
 
 def test_tool_result_keeps_structured_receipt_and_staged_changes():
     receipt = DiffReceipt(

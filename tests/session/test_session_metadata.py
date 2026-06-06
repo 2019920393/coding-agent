@@ -9,16 +9,17 @@
 
 import asyncio
 import json
+import sys
 import tempfile
 from pathlib import Path
-import sys
 from unittest.mock import patch
 
 # 添加 Codo_new 到路径
 sys.path.insert(0, str(Path(__file__).parent / "Codo_new"))
 
-from codo.session.storage import SessionStorage
 from codo.session.restore import extract_metadata_from_transcript
+from codo.session.storage import SessionStorage
+
 
 def test_metadata_recording():
     """测试元数据记录功能"""
@@ -52,7 +53,7 @@ def test_metadata_recording():
         session_file = session.session_file
 
         # 读取文件验证
-        with open(session_file, "r", encoding="utf-8") as f:
+        with open(session_file, encoding="utf-8") as f:
             lines = f.readlines()
 
         assert len(lines) == 10, f"Expected 10 metadata entries, got {len(lines)}"
@@ -134,7 +135,7 @@ def test_metadata_extraction():
         session_file = session.session_file
 
         # 读取并提取元数据
-        with open(session_file, "r", encoding="utf-8") as f:
+        with open(session_file, encoding="utf-8") as f:
             records = [json.loads(line) for line in f]
 
         metadata = extract_metadata_from_transcript(records)
@@ -214,7 +215,7 @@ def test_multiple_sessions():
         assert session2_file.exists()
 
         # 读取会话 1 并验证
-        with open(session1_file, "r", encoding="utf-8") as f:
+        with open(session1_file, encoding="utf-8") as f:
             records1 = [json.loads(line) for line in f]
 
         assert len(records1) == 2
@@ -222,7 +223,7 @@ def test_multiple_sessions():
         assert records1[1]["session_id"] == "session-1"
 
         # 读取会话 2 并验证
-        with open(session2_file, "r", encoding="utf-8") as f:
+        with open(session2_file, encoding="utf-8") as f:
             records2 = [json.loads(line) for line in f]
 
         assert len(records2) == 2
@@ -249,7 +250,7 @@ def test_worktree_null_state():
         session_file = session.session_file
 
         # 读取并提取
-        with open(session_file, "r", encoding="utf-8") as f:
+        with open(session_file, encoding="utf-8") as f:
             records = [json.loads(line) for line in f]
 
         metadata = extract_metadata_from_transcript(records)

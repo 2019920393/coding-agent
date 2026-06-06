@@ -2,8 +2,10 @@
 LSPTool 类型定义
 """
 
-from typing import Literal, Optional
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
 
 class LSPToolInput(BaseModel):
     """LSPTool 输入"""
@@ -26,7 +28,7 @@ class LSPToolInput(BaseModel):
 
     character: int = Field(..., description="字符位置（1-based）", ge=1)
 
-    query: Optional[str] = Field(
+    query: str | None = Field(
         default=None, description="查询字符串（仅用于 workspaceSymbol）"
     )
 
@@ -39,8 +41,8 @@ class LSPToolOutput(BaseModel):
 
     result: str = Field(..., description="格式化的结果")
 
-    result_count: Optional[int] = Field(default=None, description="结果数量")
+    result_count: int | None = Field(default=None, description="结果数量")
 
-    file_count: Optional[int] = Field(default=None, description="涉及的文件数量")
+    file_count: int | None = Field(default=None, description="涉及的文件数量")
 
-    symbol_name: Optional[str] = Field(default=None, description="符号名称")
+    symbol_name: str | None = Field(default=None, description="符号名称")

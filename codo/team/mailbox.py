@@ -2,8 +2,10 @@
 
 import asyncio
 from collections import defaultdict
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+
 from .message_types import Message
+
 
 class Mailbox:
     """Manages message delivery between agents."""
@@ -15,9 +17,11 @@ class Mailbox:
         self._listeners: list[Callable[[Message], Awaitable[None]]] = []
 
     def register_listener(self, listener: Callable[[Message], Awaitable[None]]) -> None:
+        """注册消息监听器，每次有新消息发送时都会被调用。"""
         self._listeners.append(listener)
 
     def unregister_listener(self, listener: Callable[[Message], Awaitable[None]]) -> None:
+        """注销消息监听器。"""
         if listener in self._listeners:
             self._listeners.remove(listener)
 
@@ -33,7 +37,7 @@ class Mailbox:
         for listener in list(self._listeners):
             await listener(message)
 
-    async def receive(self, agent_id: str, timeout: Optional[float] = None) -> Optional[Message]:
+    async def receive(self, agent_id: str, timeout: float | None = None) -> Message | None:
         """
         Receive the next message for an agent.
 

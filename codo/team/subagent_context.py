@@ -5,9 +5,10 @@
 - fresh 机制：创建新的专门角色上下文
 """
 
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, field
 import copy
+from dataclasses import dataclass, field
+from typing import Any
+
 
 @dataclass
 class SubAgentContext:
@@ -26,18 +27,18 @@ class SubAgentContext:
     mode: str  # "fresh" or "fork"
     agent_type: str
     system_prompt: str
-    tools: List[Any]
+    tools: list[Any]
     model: str
-    parent_context: Optional[Dict[str, Any]] = None
+    parent_context: dict[str, Any] | None = None
     is_background: bool = False
-    agent_id: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    agent_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     max_turns: int = 10
 
 def prepare_fresh_context(
     agent_type: str,
     system_prompt: str,
-    tools: List[Any],
+    tools: list[Any],
     model: str,
     is_background: bool = False,
     max_turns: int = 10, 
@@ -76,8 +77,8 @@ def prepare_fresh_context(
     )
 
 def prepare_fork_context(
-    parent_context: Dict[str, Any],
-    tools: List[Any],
+    parent_context: dict[str, Any],
+    tools: list[Any],
     is_background: bool = False,
 ) -> SubAgentContext:
     """
@@ -138,8 +139,8 @@ Your role is to handle this specific subtask and report back.
     )
 
 def should_use_fork_mode(
-    subagent_type: Optional[str],
-    parent_context: Dict[str, Any],
+    subagent_type: str | None,
+    parent_context: dict[str, Any],
 ) -> bool:
     """
     Decide whether to use fork mode or fresh mode.
@@ -171,7 +172,7 @@ def should_use_fork_mode(
     # Default to fork mode for context reuse
     return True
 
-def clone_context_for_isolation(context: Dict[str, Any]) -> Dict[str, Any]:
+def clone_context_for_isolation(context: dict[str, Any]) -> dict[str, Any]:
     """
     Clone context for sub-agent isolation.
 

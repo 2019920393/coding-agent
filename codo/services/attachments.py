@@ -21,7 +21,7 @@ import asyncio
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 # 模块级日志记录器，用于调试和错误追踪
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # 附件类型定义
 # ============================================================================
 
-def create_attachment_message(attachment: Dict[str, Any]) -> Dict[str, Any]:
+def create_attachment_message(attachment: dict[str, Any]) -> dict[str, Any]:
     """
     创建附件消息
 
@@ -56,10 +56,10 @@ def create_attachment_message(attachment: Dict[str, Any]) -> Dict[str, Any]:
 # ============================================================================
 
 async def get_attachment_messages(
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     turn_count: int,
-    context: Optional[Dict[str, Any]] = None,
-) -> List[Dict[str, Any]]:
+    context: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """
     收集所有附件消息
 
@@ -185,9 +185,9 @@ async def get_attachment_messages(
     return attachment_messages
 
 def filter_duplicate_memory_attachments(
-    attachments: List[Dict[str, Any]],
-    messages: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    attachments: list[dict[str, Any]],
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
     过滤重复的 memory 附件
 
@@ -228,7 +228,7 @@ def filter_duplicate_memory_attachments(
         return attachments
 
     # 步骤 2：过滤候选附件，跳过路径已在历史中出现的 memory 附件
-    filtered: List[Dict[str, Any]] = []
+    filtered: list[dict[str, Any]] = []
     for att in attachments:
         # 只对附件消息格式做去重检查（type == "attachment"）
         if att.get("type") == "attachment":
@@ -265,26 +265,29 @@ class MemoryPrefetch:
     """
 
     def __init__(self):
+        """初始化 MemoryPrefetch，设置 task、settled_at 和 consumed_on_iteration 为初始值。"""
         # asyncio.Task 句柄，持有后台预取协程（None 表示未启动）
-        self.task: Optional[asyncio.Task] = None
+        self.task: asyncio.Task | None = None
         # 预取完成时间戳（秒），None 表示尚未完成
-        self.settled_at: Optional[float] = None
+        self.settled_at: float | None = None
         # 首次消费时的迭代轮次，-1 表示尚未被消费
         self.consumed_on_iteration: int = -1
 
     def __enter__(self) -> "MemoryPrefetch":
+        """进入上下文管理器，返回自身供 with 语句绑定。"""
         # 进入上下文，返回自身供 with 语句绑定
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """退出上下文管理器，若后台任务仍在运行则取消，防止资源泄漏。"""
         # 退出上下文时，若后台任务仍在运行则取消，防止资源泄漏
         if self.task is not None and not self.task.done():
             self.task.cancel()  # 取消未完成的预取任务
 
 def start_relevant_memory_prefetch(
-    messages: List[Dict[str, Any]],
-    context: Dict[str, Any],
-) -> Optional[MemoryPrefetch]:
+    messages: list[dict[str, Any]],
+    context: dict[str, Any],
+) -> MemoryPrefetch | None:
     """
     启动相关记忆预取
 
@@ -314,7 +317,7 @@ def start_relevant_memory_prefetch(
 
     # 步骤 2：从消息历史中找到最后一条非 meta 的用户消息
     # 倒序遍历，找到第一条 role == "user" 且 isMeta != True 的消息
-    last_user_message: Optional[Dict[str, Any]] = None
+    last_user_message: dict[str, Any] | None = None
     for msg in reversed(messages):
         if msg.get("role") == "user" and not msg.get("isMeta", False):
             last_user_message = msg
@@ -344,8 +347,8 @@ def start_relevant_memory_prefetch(
         return None
 
     # 步骤 5：获取 memory 目录路径
-    from codo.services.memory.paths import get_project_memory_dir
-    memory_dir = str(get_project_memory_dir(cwd))  # 转为字符串，便于后续传参
+    from codo.services.memory.paths import get_memory_dir
+    memory_dir = str(get_memory_dir())  # 转为字符串，便于后续传参
 
     # 步骤 6：收集本会话已展示过的 memory 文件路径（用于去重）
     # 遍历消息历史，找出所有已注入的 memory 附件路径
@@ -361,7 +364,7 @@ def start_relevant_memory_prefetch(
             already_surfaced.add(path)  # 记录已展示路径，避免重复预取
 
     # 步骤 7：定义异步预取协程
-    async def _prefetch() -> List[Dict[str, Any]]:
+    async def _prefetch() -> list[dict[str, Any]]:
         """
         执行 memory 预取的内部协程
 
@@ -381,7 +384,7 @@ def start_relevant_memory_prefetch(
             )
 
             # 逐个读取相关文件内容，构建附件数据
-            result: List[Dict[str, Any]] = []
+            result: list[dict[str, Any]] = []
             for mem in relevant:
                 try:
                     # 读取文件内容（UTF-8 编码）

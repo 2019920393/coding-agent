@@ -2,7 +2,8 @@ import json
 from uuid import uuid4
 
 from codo.query_engine import QueryEngine
-from codo.session.storage import SessionStorage, get_session_file_path
+from codo.session.storage import SessionStorage
+
 
 def test_session_storage_writes_event_log_and_snapshot(tmp_path):
     storage = SessionStorage(session_id=str(uuid4()), cwd=str(tmp_path))

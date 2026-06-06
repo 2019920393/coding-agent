@@ -11,22 +11,18 @@
 import asyncio
 import inspect
 import logging
-import re
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from uuid import uuid4
 
 from anthropic import AsyncAnthropic
 
 from codo.services.compact.prompt import (
-    format_compact_summary,
     get_compact_prompt,
     get_compact_user_summary_message,
 )
 from codo.services.token_estimation import (
     TokenBudget,
     estimate_messages_tokens,
-    estimate_token_count,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,10 +45,19 @@ class CompactResult:
     def __init__(
         self,
         summary: str,                          # 模型生成的对话摘要文本（从 <summary> 标签提取）
-        new_messages: List[Dict[str, Any]],    # 压缩后的消息列表（通常是 [compact_boundary, summary_message]）
+        new_messages: list[dict[str, Any]],    # 压缩后的消息列表（通常是 [compact_boundary, summary_message]）
         pre_compact_token_count: int = 0,      # 压缩前的 token 数量
         post_compact_token_count: int = 0,     # 压缩后的 token 数量（通常降低 60-80%）
     ):
+        """
+        初始化压缩结果。
+
+        参数:
+            summary: 模型生成的对话摘要文本
+            new_messages: 压缩后的消息列表
+            pre_compact_token_count: 压缩前的 token 数量
+            post_compact_token_count: 压缩后的 token 数量
+        """
         self.summary = summary
         self.new_messages = new_messages
         self.pre_compact_token_count = pre_compact_token_count
@@ -74,6 +79,7 @@ class AutoCompactState:
     MAX_CONSECUTIVE_FAILURES = 3
 
     def __init__(self):
+        """初始化 AutoCompactState，所有计数器归零。"""
         # 是否已经执行过 compact
         self.compacted = False
         # 轮次计数器（自上次 compact 以来的轮次数）
@@ -124,7 +130,7 @@ class AutoCompactState:
 def calculate_token_warning_state(
     token_usage: int,
     model: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     计算 token 使用量的警告状态
 
@@ -187,14 +193,14 @@ def calculate_token_warning_state(
 async def compact_conversation(
     client: AsyncAnthropic,
     model: str,
-    system_prompt: str,
-    messages: List[Dict[str, Any]],
+    system_prompt: str | list[dict[str, Any]],
+    messages: list[dict[str, Any]],
     custom_instructions: str = None,
     suppress_follow_up: bool = False,
     transcript_path: str = None,
 ) -> CompactResult:
     """
-        通过摘要对对话内容进行精简压缩。
+    通过摘要对对话内容进行精简压缩。
     compactConversation()
     执行流程：
     统计压缩前的令牌数量
@@ -277,10 +283,10 @@ async def compact_conversation(
 async def force_compact(
     client: AsyncAnthropic,
     model: str,
-    system_prompt: str,
-    messages: List[Dict[str, Any]],
+    system_prompt: str | list[dict[str, Any]],
+    messages: list[dict[str, Any]],
     transcript_path: str = None,
-) -> Optional[CompactResult]:
+) -> CompactResult | None:
     """
     强制执行 compact（用于 reactive compact 场景）
 
@@ -314,12 +320,12 @@ async def force_compact(
 async def force_compact_conversation(
     client: AsyncAnthropic,
     model: str,
-    system_prompt: str,
-    messages: List[Dict[str, Any]],
+    system_prompt: str | list[dict[str, Any]],
+    messages: list[dict[str, Any]],
     token_budget: TokenBudget,
     tracking: AutoCompactState,
     transcript_path: str = None,
-) -> Optional[CompactResult]:
+) -> CompactResult | None:
     """
     强制执行 compact，绕过阈值检查（兼容旧接口）。
 
@@ -364,12 +370,12 @@ async def force_compact_conversation(
 async def auto_compact_if_needed(
     client: AsyncAnthropic,
     model: str,
-    system_prompt: str,
-    messages: List[Dict[str, Any]],
+    system_prompt: str | list[dict[str, Any]],
+    messages: list[dict[str, Any]],
     token_budget: TokenBudget,
     tracking: AutoCompactState,
     transcript_path: str = None,
-) -> Optional[CompactResult]:
+) -> CompactResult | None:
     """
     检查是否需要自动压缩并执行压缩操作。
     autoCompactIfNeeded()
@@ -419,9 +425,9 @@ async def auto_compact_if_needed(
 async def _stream_compact_summary(
     client: AsyncAnthropic,
     model: str,
-    system_prompt: str,
-    messages: List[Dict[str, Any]],
-) -> Optional[str]:
+    system_prompt: str | list[dict[str, Any]],
+    messages: list[dict[str, Any]],
+) -> str | None:
     """
     从模型中流式传输精简摘要。
     针对瞬时错误进行重试，最多重试 MAX_COMPACT_RETRIES 次。
@@ -485,8 +491,8 @@ async def _stream_compact_summary(
     return None
 
 def _strip_images_from_messages(
-    messages: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
         发送消息前剥离其中的图片模块以实现内容压缩。
         图片会占用精简请求中的令牌额度。
@@ -545,8 +551,8 @@ def _strip_images_from_messages(
     return result
 
 def _ensure_alternating(
-    messages: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
     确保消息在用户与助手角色之间交替发送。
     如有需要，合并连续的相同角色消息。

@@ -1,22 +1,25 @@
 """
 API 请求组装器
 
-组装完整的 ?? API 请求参数。
+组装完整的模型 API 请求参数。
 
 参考：src/services/api/query.ts - queryModel()
 简化：移除 Beta 头管理、工具搜索、复杂的缓存策略
 保留：基础请求参数组装、系统提示词、消息历史、工具列表
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Any
+
+from codo.constants import DEFAULT_MODEL
 from codo.services.prompt.builder import PromptBuilder
 from codo.services.prompt.messages import (
-    normalize_messages_for_api,
-    ensure_alternating_messages,
     add_cache_breakpoints,
+    ensure_alternating_messages,
+    normalize_messages_for_api,
 )
 from codo.services.prompt.tools import tools_to_api_schemas
 from codo.tools_registry import get_all_tools
+
 
 class APIRequestAssembler:
     """
@@ -32,9 +35,9 @@ class APIRequestAssembler:
     def __init__(
         self,
         cwd: str,
-        model: str = "claude-opus-4-6",
+        model: str = DEFAULT_MODEL,
         max_tokens: int = 8192,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
     ):
         """
         初始化 API 请求组装器
@@ -65,7 +68,7 @@ class APIRequestAssembler:
             模型显示名称
         """
         model_map = {
-            "claude-opus-4-6": "Opus 4.6",
+            DEFAULT_MODEL: DEFAULT_MODEL,
             "claude-sonnet-4-6": "Sonnet 4.6",
             "claude-haiku-4-5-20251001": "Haiku 4.5",
         }
@@ -73,11 +76,11 @@ class APIRequestAssembler:
 
     async def assemble_request(
         self,
-        messages: List[Dict[str, Any]],
-        language_preference: Optional[str] = None,
-        custom_system_prompt: Optional[str] = None,
+        messages: list[dict[str, Any]],
+        language_preference: str | None = None,
+        custom_system_prompt: str | None = None,
         enable_caching: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         组装完整的 API 请求参数
 
@@ -95,7 +98,7 @@ class APIRequestAssembler:
             enable_caching: 是否启用缓存
 
         Returns:
-            ?? API 请求参数
+            模型 API 请求参数
         """
         # 1. 构建系统提示词
         system_prompt = self.prompt_builder.build_system_prompt(
@@ -140,8 +143,8 @@ class APIRequestAssembler:
     async def assemble_request_simple(
         self,
         user_message: str,
-        conversation_history: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
+        conversation_history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """
         组装简单的 API 请求（单条用户消息）
 
@@ -154,7 +157,7 @@ class APIRequestAssembler:
             conversation_history: 对话历史
 
         Returns:
-            ?? API 请求参数
+            模型 API 请求参数
         """
         # 构建消息列表
         messages = []
@@ -174,14 +177,14 @@ class APIRequestAssembler:
 
 async def assemble_api_request(
     cwd: str,
-    messages: List[Dict[str, Any]],
-    model: str = "claude-opus-4-6",
+    messages: list[dict[str, Any]],
+    model: str = DEFAULT_MODEL,
     max_tokens: int = 8192,
-    temperature: Optional[float] = None,
-    language_preference: Optional[str] = None,
-    custom_system_prompt: Optional[str] = None,
+    temperature: float | None = None,
+    language_preference: str | None = None,
+    custom_system_prompt: str | None = None,
     enable_caching: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     组装 API 请求（便捷函数）
 
@@ -200,7 +203,7 @@ async def assemble_api_request(
         enable_caching: 是否启用缓存
 
     Returns:
-        ?? API 请求参数
+        模型 API 请求参数
     """
     assembler = APIRequestAssembler(
         cwd=cwd,

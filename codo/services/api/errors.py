@@ -15,7 +15,7 @@ import asyncio
 import logging
 import re
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from anthropic import (
     APIConnectionError,
@@ -180,10 +180,10 @@ def format_api_error(error: Exception) -> str:
         return "提示词过长。使用 /compact 压缩对话。"
 
     if category == APIErrorCategory.AUTH_ERROR:
-        return f"认证错误: {error}。请检查你的 API 密钥。"
+        return f"Authentication error: {error}. 请检查你的 API 密钥。"
 
     if category == APIErrorCategory.RATE_LIMITED:
-        return "API 速率限制。自动重试中..."
+        return "Rate limited by API. 自动重试中..."
 
     if category == APIErrorCategory.OVERLOADED:
         return "API 过载。自动重试中..."
@@ -193,6 +193,13 @@ def format_api_error(error: Exception) -> str:
 
     if category == APIErrorCategory.TIMEOUT:
         return "请求超时。重试中..."
+
+    if category == APIErrorCategory.BAD_REQUEST:
+        error_str = str(error)
+        # 尝试提取更有用的错误信息
+        if "message" in error_str.lower():
+            return f"API 请求格式错误: {error_str}"
+        return f"API 请求格式错误 (400): {error}. 请检查请求参数是否正确。"
 
     return f"API 错误: {error}"
 

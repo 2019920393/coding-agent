@@ -1,8 +1,10 @@
 """Message types for team communication."""
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
+
 
 class MessageType(str, Enum):
     """Types of messages in the team system."""
@@ -26,4 +28,4 @@ class Message(BaseModel):
     content: str = Field(description="Message content")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
     timestamp: float = Field(description="Unix timestamp when message was created")
-    parent_id: Optional[str] = Field(default=None, description="ID of parent message if this is a reply")
+    parent_id: str | None = Field(default=None, description="ID of parent message if this is a reply")

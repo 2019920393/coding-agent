@@ -7,6 +7,7 @@ import pytest
 from codo.services.mcp.client import MCPClientManager
 from codo.services.mcp.config import MCPServerConfig
 
+
 class DummyConfigManager:
     def __init__(self) -> None:
         self.config = MCPServerConfig(command="dummy-server", args=["--stdio"])

@@ -1,20 +1,29 @@
-"""用户提问工具实现。"""
+import json
 import re
-from typing import Dict, Any
-from ..base import Tool, ToolUseContext
-from ..types import ToolResult, ValidationResult
+from typing import Any
+from uuid import uuid4
+
 from codo.types.permissions import PermissionAskDecision, create_ask_decision
-from .types import AskUserQuestionInput, AskUserQuestionOutput
-from .prompt import PROMPT, DESCRIPTION
+from codo.types.runtime import (
+    InteractionOption,
+    InteractionQuestion,
+    InteractionRequest,
+)
+
+from ..base import Tool
+from ..types import ToolResult, ValidationResult
 from .constants import (
     ASK_USER_QUESTION_TOOL_NAME,
-    MAX_QUESTIONS,
-    MIN_QUESTIONS,
-    MAX_OPTIONS,
-    MIN_OPTIONS,
     MAX_HEADER_LENGTH,
+    MAX_OPTIONS,
+    MAX_QUESTIONS,
     MAX_RESULT_SIZE_CHARS,
+    MIN_OPTIONS,
+    MIN_QUESTIONS,
 )
+from .prompt import DESCRIPTION, PROMPT
+from .types import AskUserQuestionInput, AskUserQuestionOutput
+
 
 class AskUserQuestionTool(Tool[AskUserQuestionInput, AskUserQuestionOutput, None]):
     """
@@ -38,11 +47,11 @@ class AskUserQuestionTool(Tool[AskUserQuestionInput, AskUserQuestionOutput, None
         """返回输出 schema 类 AskUserQuestionOutput。"""
         return AskUserQuestionOutput
 
-    async def description(self, input_data: AskUserQuestionInput, options: Dict[str, Any]) -> str:
+    async def description(self, input_data: AskUserQuestionInput, options: dict[str, Any]) -> str:
         """返回工具简短描述。"""
         return DESCRIPTION
 
-    async def prompt(self, options: Dict[str, Any]) -> str:
+    async def prompt(self, options: dict[str, Any]) -> str:
         """返回系统提示词中的工具描述。"""
         return PROMPT
 
@@ -86,10 +95,10 @@ class AskUserQuestionTool(Tool[AskUserQuestionInput, AskUserQuestionOutput, None
     async def validate_input(
         self,
         args: AskUserQuestionInput,
-        context: ToolUseContext
+        context: dict[str, Any]
     ) -> ValidationResult:
         """验证输入参数"""
-        options = context.get_options()
+        options = context.get("options", {})
 
         # 默认严格模式（兼容单元测试）；运行时可通过 options 显式开启宽松模式。
         normalize_question_mark = bool(options.get("normalize_question_mark", False))
@@ -189,10 +198,62 @@ class AskUserQuestionTool(Tool[AskUserQuestionInput, AskUserQuestionOutput, None
 
         return None
 
+    def _build_interaction_request(self, args: AskUserQuestionInput) -> InteractionRequest:
+        request_id = (args.metadata or {}).get("request_id") or f"req_question_{uuid4().hex}"
+        questions = [
+            InteractionQuestion(
+                question_id=f"q_{index}",
+                header=question.header,
+                question=question.question,
+                options=[
+                    InteractionOption(
+                        value=option.label,
+                        label=option.label,
+                        description=option.description or "",
+                        preview=option.preview or "",
+                    )
+                    for option in question.options
+                ],
+                multi_select=question.multiSelect,
+            )
+            for index, question in enumerate(args.questions, start=1)
+        ]
+        return InteractionRequest(
+            request_id=request_id,
+            kind="question",
+            label="Answer question",
+            message="Answer questions to continue.",
+            questions=questions,
+        )
+
+    def _parse_interaction_response(
+        self,
+        response: str,
+        args: AskUserQuestionInput,
+    ) -> dict[str, str] | None:
+        try:
+            payload = json.loads(response)
+        except json.JSONDecodeError:
+            payload = response
+
+        if isinstance(payload, dict):
+            answers_payload = payload.get("answers") if "answers" in payload else payload
+            if isinstance(answers_payload, dict):
+                answers: dict[str, str] = {}
+                for key, value in answers_payload.items():
+                    if isinstance(key, str) and isinstance(value, str):
+                        answers[key] = value
+                return answers or None
+
+        if isinstance(payload, str) and len(args.questions) == 1:
+            return {args.questions[0].question: payload}
+
+        return None
+
     async def check_permissions(
         self,
         args: AskUserQuestionInput,
-        context: ToolUseContext
+        context: dict[str, Any]
     ) -> PermissionAskDecision:
         """检查权限：总是需要用户交互"""
         return create_ask_decision(
@@ -203,21 +264,36 @@ class AskUserQuestionTool(Tool[AskUserQuestionInput, AskUserQuestionOutput, None
     async def call(
         self,
         args: AskUserQuestionInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool,
         parent_message,
         on_progress=None
     ) -> ToolResult[AskUserQuestionOutput]:
         """执行用户问答"""
-        # 检查是否有答案
-        if not args.answers:
-            return ToolResult(error="No answers provided by user")
+        answers = args.answers
+        if not answers:
+            broker = context.get("interaction_broker") or context.get("runtime_controller")
+            if broker is None:
+                return ToolResult(error="No interaction broker available for user question")
 
-        # 返回结果
+            request = self._build_interaction_request(args)
+            if hasattr(broker, "request"):
+                response = await broker.request(request)
+            elif hasattr(broker, "request_interaction"):
+                response = await broker.request_interaction(request)
+            else:
+                return ToolResult(error="Interaction broker cannot request user questions")
+            if response is None:
+                return ToolResult(error="User cancelled question interaction")
+
+            answers = self._parse_interaction_response(response, args)
+            if not answers:
+                return ToolResult(error="Could not parse user question response")
+
         return ToolResult(
             data=AskUserQuestionOutput(
                 questions=args.questions,
-                answers=args.answers,
+                answers=answers,
                 annotations=args.annotations
             )
         )
@@ -226,7 +302,7 @@ class AskUserQuestionTool(Tool[AskUserQuestionInput, AskUserQuestionOutput, None
         self,
         content: AskUserQuestionOutput,
         tool_use_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """将工具结果映射为 API 响应格式"""
         # 格式化答案
         answer_parts = []

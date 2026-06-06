@@ -5,7 +5,7 @@ AgentTool 常量和 prompt 模板
 - prompt.ts — getPrompt() 生成 AgentTool 的 prompt
 """
 
-from typing import List
+
 from .agents import AgentDefinition, get_builtin_agents
 
 # 工具名称常量
@@ -22,7 +22,7 @@ DEFAULT_AGENT_TYPE = "Explore"
 # AgentTool 描述
 DESCRIPTION = "Launch a new agent to handle a specific task, optionally in the background"
 
-def get_agent_tool_prompt(agents: List[AgentDefinition] = None) -> str:
+def get_agent_tool_prompt(agents: list[AgentDefinition] = None) -> str:
     """
     生成 AgentTool 的系统 prompt
 

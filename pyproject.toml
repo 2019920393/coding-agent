@@ -1,0 +1,88 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codo"
+version = "0.1.0"
+description = "Desktop AI coding assistant built on the Anthropic API"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.40.0",
+    "aiofiles>=23.0.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "pywebview>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.17.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.12.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["codo*"]
+exclude = ["tests*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"codo/tools/notebook_edit_tool/notebook_edit_tool.py" = ["ASYNC230"]
+"tests/**/*.py" = ["ASYNC110", "ASYNC230", "B017", "E402"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_ignores = true
+mypy_path = "typings"
+exclude = [
+    "workbench-prototype/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "aiofiles",
+    "aiofiles.*",
+    "yaml",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+]
+ignore_errors = true
+
+# Legacy modules below predate the desktop-only typing pass. Keeping them explicit
+# prevents old debt from hiding new desktop/eval/runtime type errors.
+[[tool.mypy.overrides]]
+module = [
+    "codo.commands.*",
+    "codo.query",
+    "codo.query_engine",
+    "codo.runtime_protocol",
+    "codo.services.*",
+    "codo.session.*",
+    "codo.team.*",
+    "codo.tools.*",
+    "codo.tools_registry",
+    "codo.types.hooks",
+    "codo.types.orchestration",
+    "codo.utils.abort_controller",
+    "codo.utils.config",
+    "codo.utils.file_read",
+    "codo.utils.fs_operations",
+    "codo.utils.generators",
+    "codo.utils.tool_result_storage",
+]
+ignore_errors = true

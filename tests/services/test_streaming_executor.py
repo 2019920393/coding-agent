@@ -1,31 +1,30 @@
 """Tests for Streaming Tool Executor system."""
 
-import pytest
 import asyncio
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock
 
-from codo.services.tools.streaming_executor import (
-    StreamingToolExecutor,
-    ToolStatus,
-    TrackedTool,
-    ToolUpdate,
-)
+import pytest
+
 from codo.services.tools.error_handler import (
     ErrorHandler,
     ErrorSeverity,
     RollbackManager,
 )
+from codo.services.tools.permission_checker import create_default_permission_context
 from codo.services.tools.progress_reporter import (
     ProgressReporter,
     ProgressType,
 )
-from codo.cli.tui.interaction_types import InteractionRequest
+from codo.services.tools.streaming_executor import (
+    StreamingToolExecutor,
+    ToolStatus,
+)
 from codo.tools.base import ToolUseContext
 from codo.tools.types import ToolResult, ValidationResult
-from codo.types.permissions import create_passthrough_result
-from codo.services.tools.permission_checker import create_default_permission_context
-from codo.types.permissions import PermissionMode
+from codo.types.permissions import PermissionMode, create_passthrough_result
+from codo.types.runtime import InteractionRequest
+
 
 class FakeInteractionBroker:
     """Minimal broker used by executor runtime interaction tests."""

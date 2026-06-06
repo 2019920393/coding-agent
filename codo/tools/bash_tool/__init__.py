@@ -2,7 +2,7 @@
 BashTool 模块导出
 """
 
-from .bash_tool import bash_tool, BashTool
+from .bash_tool import BashTool, bash_tool
 from .types import BashToolInput, BashToolOutput, BashToolProgress
 
 __all__ = [

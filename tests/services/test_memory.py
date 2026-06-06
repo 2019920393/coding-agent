@@ -4,85 +4,62 @@ Tests for memory modules: paths, scan, prompts, extract.
 
 import os
 import tempfile
-import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-from codo.services.memory.paths import (
-    sanitize_path_for_dir,
-    get_project_memory_dir,
-    ensure_memory_dir,
-    get_memory_index_path,
-    is_memory_path,
-    ENTRYPOINT_NAME,
-    MAX_ENTRYPOINT_LINES,
-    MAX_ENTRYPOINT_BYTES,
-)
-from codo.services.memory.scan import (
-    parse_frontmatter,
-    scan_memory_files,
-    format_memory_manifest,
-    load_memory_index,
-    MemoryHeader,
-)
-from codo.services.memory.prompts import (
-    build_extract_prompt,
-    MEMORY_TYPES,
-    WHAT_NOT_TO_SAVE,
-)
+import pytest
+
 from codo.services.memory.extract import (
     MemoryExtractionState,
     _count_model_visible_since,
-    _has_memory_writes_since,
-    _execute_memory_write,
     _execute_memory_edit,
+    _execute_memory_write,
+    _has_memory_writes_since,
     _process_tool_calls,
+)
+from codo.services.memory.paths import (
+    ENTRYPOINT_NAME,
+    MAX_ENTRYPOINT_LINES,
+    ensure_memory_dir,
+    get_memory_dir,
+    get_memory_index_path,
+    is_memory_path,
+)
+from codo.services.memory.prompts import (
+    build_extract_prompt,
+)
+from codo.services.memory.scan import (
+    MemoryHeader,
+    format_memory_manifest,
+    load_memory_index,
+    parse_frontmatter,
+    scan_memory_files,
 )
 
 # ============================================================================
 # Paths tests
 # ============================================================================
 
-class TestSanitizePath:
-    def test_windows_path(self):
-        result = sanitize_path_for_dir("C:\\Users\\user\\project")
-        assert "\\" not in result
-        assert ":" not in result
-
-    def test_unix_path(self):
-        result = sanitize_path_for_dir("/home/user/project")
-        assert "/" not in result
-
-    def test_collapses_dashes(self):
-        result = sanitize_path_for_dir("C:\\\\Users\\\\user")
-        assert "--" not in result
-
-    def test_strips_leading_trailing_dashes(self):
-        result = sanitize_path_for_dir("/project/")
-        assert not result.startswith("-")
-        assert not result.endswith("-")
-
-class TestGetProjectMemoryDir:
+class TestGetMemoryDir:
     def test_returns_path_object(self):
-        result = get_project_memory_dir("/home/user/project")
+        result = get_memory_dir()
         assert isinstance(result, Path)
-        assert "memory" in str(result)
-        assert "projects" in str(result)
+        assert result.name == "memory"
 
 class TestEnsureMemoryDir:
     def test_creates_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch(
-                "codo.services.memory.paths.get_project_memory_dir",
+                "codo.services.memory.paths.get_memory_dir",
                 return_value=Path(tmpdir) / "memory",
             ):
-                result = ensure_memory_dir("/fake/cwd")
+                result = ensure_memory_dir()
                 assert result.exists()
                 assert result.is_dir()
 
 class TestGetMemoryIndexPath:
     def test_returns_memory_md_path(self):
-        result = get_memory_index_path("/home/user/project")
+        result = get_memory_index_path()
         assert result.name == ENTRYPOINT_NAME
 
 class TestIsMemoryPath:
@@ -94,10 +71,10 @@ class TestIsMemoryPath:
             test_file.touch()
 
             with patch(
-                "codo.services.memory.paths.get_project_memory_dir",
+                "codo.services.memory.paths.get_memory_dir",
                 return_value=memory_dir,
             ):
-                assert is_memory_path(str(test_file), "/fake/cwd")
+                assert is_memory_path(str(test_file))
 
     def test_outside_memory_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -107,10 +84,10 @@ class TestIsMemoryPath:
             outside_file.touch()
 
             with patch(
-                "codo.services.memory.paths.get_project_memory_dir",
+                "codo.services.memory.paths.get_memory_dir",
                 return_value=memory_dir,
             ):
-                assert not is_memory_path(str(outside_file), "/fake/cwd")
+                assert not is_memory_path(str(outside_file))
 
 # ============================================================================
 # Scan tests
@@ -247,11 +224,12 @@ class TestLoadMemoryIndex:
                 index_content, encoding="utf-8"
             )
 
+            # cwd 必须不存在，否则会走 "项目根 MEMORY.md 优先" 分支
             with patch(
                 "codo.services.memory.paths.get_memory_index_path",
                 return_value=memory_dir / ENTRYPOINT_NAME,
             ):
-                result = load_memory_index("/fake/cwd")
+                result = load_memory_index("/nonexistent/cwd")
                 assert result == index_content
 
     def test_line_truncation(self):
@@ -269,7 +247,7 @@ class TestLoadMemoryIndex:
                 "codo.services.memory.paths.get_memory_index_path",
                 return_value=memory_dir / ENTRYPOINT_NAME,
             ):
-                result = load_memory_index("/fake/cwd")
+                result = load_memory_index("/nonexistent/cwd")
                 assert "Truncated" in result
                 assert f"line cap ({MAX_ENTRYPOINT_LINES})" in result
 

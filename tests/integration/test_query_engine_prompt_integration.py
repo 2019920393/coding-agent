@@ -2,13 +2,13 @@
 测试 QueryEngine 与 Prompt 系统的集成
 """
 
-import asyncio
-import os
-import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from codo.query_engine import QueryEngine
+
 
 class TestQueryEnginePromptIntegration:
     """测试 QueryEngine 与 Prompt 系统的集成"""
@@ -37,7 +37,9 @@ class TestQueryEnginePromptIntegration:
         """测试 QueryEngine 初始化"""
         # 验证基本属性
         assert query_engine.cwd == test_cwd
-        assert query_engine.model == "claude-opus-4-20250514"
+        from codo.constants import DEFAULT_MODEL
+
+        assert query_engine.model == DEFAULT_MODEL
 
         # 验证工具列表（当前实现包含更多内置工具，至少应包含核心 6 个）
         assert len(query_engine.tools) >= 6
@@ -130,7 +132,7 @@ class TestQueryEnginePromptIntegration:
 
     @pytest.mark.asyncio
     async def test_submit_message_with_mock_api(self, query_engine):
-        """测试 submit_message 使用模拟 API"""
+        """测试 submit_message_stream 使用模拟 API"""
         # 创建模拟的流式响应
         mock_stream = AsyncMock()
         mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
@@ -165,9 +167,9 @@ class TestQueryEnginePromptIntegration:
             # 提交消息
             results = []
             try:
-                async for result in query_engine.submit_message("Test message"):
+                async for result in query_engine.submit_message_stream("Test message"):
                     results.append(result)
-            except Exception as e:
+            except Exception:
                 # 如果出错，至少验证消息被添加到历史
                 pass
 
@@ -194,10 +196,10 @@ class TestQueryEnginePromptIntegration:
         # 调用废弃方法
         old_prompt = query_engine._build_system_prompt()
 
-        # 验证仍然可以工作（向后兼容）
-        assert "coding assistant" in old_prompt
+        # 验证旧入口仍然转发到当前 PromptBuilder。
+        assert "software engineering tasks" in old_prompt
         assert query_engine.cwd in old_prompt
-        assert "bash" in old_prompt
+        assert "Bash" in old_prompt
 
     @pytest.mark.asyncio
     async def test_tools_to_api_schemas_integration(self, query_engine):

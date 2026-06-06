@@ -4,14 +4,14 @@
 验证 SessionStorage.load_messages() 和 QueryEngine.restore_session() 的正确性。
 """
 
-import pytest
-import tempfile
 import shutil
-from pathlib import Path
+import tempfile
 from uuid import uuid4
 
-from codo.session.storage import SessionStorage, get_session_file_path
-from codo.session.types import TranscriptMessage
+import pytest
+
+from codo.session.storage import SessionStorage
+
 
 class TestSessionRestore:
     """测试会话恢复功能"""
@@ -159,7 +159,7 @@ class TestSessionRestore:
 
         # 创建新实例并加载
         storage2 = SessionStorage(self.session_id, self.temp_dir)
-        loaded_messages = storage2.load_messages()
+        storage2.load_messages()
 
         # 验证元数据被恢复
         assert storage2.current_title == "Test Session"
@@ -196,7 +196,7 @@ class TestSessionRestore:
 
         # 加载会话
         storage2 = SessionStorage(self.session_id, self.temp_dir)
-        loaded_messages = storage2.load_messages()
+        storage2.load_messages()
 
         # 验证 UUID 集合被恢复
         assert msg1_uuid in storage2.recorded_message_uuids

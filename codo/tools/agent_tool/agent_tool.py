@@ -10,30 +10,24 @@ AgentTool 核心实现
 - fork 模式（无 subagent_type）：继承父代理上下文，适合通用子任务
 """
 
-import logging
 import json
+import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict
-from typing import Optional, Callable, Any, Dict, List, Awaitable
+from typing import Any
 
-from ..base import Tool, ToolUseContext, build_tool
-
+from ..base import Tool, build_tool
 from ..receipts import AgentReceipt, receipt_to_dict
-
-from ..types import ToolResult, ValidationResult, ToolCallProgress
-
-from .types import AgentToolInput, AgentToolOutput
-
+from ..types import ToolCallProgress, ToolResult
 from .prompt import (
     AGENT_TOOL_NAME,
+    DEFAULT_AGENT_TYPE,
     DESCRIPTION,
     MAX_AGENT_TURNS,
-    DEFAULT_AGENT_TYPE,
     get_agent_tool_prompt,
 )
-
-from .agents import AgentDefinition, find_agent_by_type, get_builtin_agents
-
-from .utils import filter_tools_for_agent, extract_final_text
+from .types import AgentToolInput, AgentToolOutput
+from .utils import extract_final_text
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +78,10 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
     async def call(
         self,
         args: AgentToolInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool: Callable,
         parent_message: Any,
-        on_progress: Optional[ToolCallProgress] = None,
+        on_progress: ToolCallProgress | None = None,
     ) -> ToolResult[AgentToolOutput]:
         """
         执行子代理
@@ -99,20 +93,25 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
         4. 返回结果
 
         """
-        # context 在 streaming_executor 入口已经 coerce 为 ToolUseContext
-        options = context.get_options()
+        context_map = context if isinstance(context, dict) else {}
+        raw_options = (
+            context_map.get("options")
+            if isinstance(context, dict)
+            else getattr(context, "options", {})
+        )
+        options = raw_options if isinstance(raw_options, dict) else {}
         api_client = options.get("api_client")
         if not api_client:
             return ToolResult(
                 error="API client not available in context. Cannot run sub-agent."
             )
 
-        cwd = context.get("cwd", ".")
+        cwd = context_map.get("cwd") or options.get("cwd", ".")
         parent_model = options.get("model", "claude-sonnet-4-20250514")
-        session_id = context.get("session_id")
-        permission_context = context.get("permission_context")
-        runtime_controller = context.get("runtime_controller")
-        interaction_broker = context.get("interaction_broker")
+        session_id = context_map.get("session_id") or options.get("session_id")
+        permission_context = context_map.get("permission_context") or options.get("permission_context")
+        runtime_controller = context_map.get("runtime_controller") or options.get("runtime_controller")
+        interaction_broker = context_map.get("interaction_broker") or options.get("interaction_broker")
 
         # 构建子代理执行上下文（传递给 team 模块）
         subagent_context = {
@@ -139,7 +138,11 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
             from codo.team.enhanced_agent import run_subagent_with_mode
 
            
-            effective_args = args
+            effective_args = (
+                args.model_copy(update={"subagent_type": DEFAULT_AGENT_TYPE})
+                if not args.subagent_type
+                else args
+            )
 
 
             result = await run_subagent_with_mode(
@@ -226,7 +229,7 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
             return f"Agent({input_data.subagent_type})"
         return "Agent"
 
-    def get_tool_use_summary(self, input_data=None) -> Optional[str]:
+    def get_tool_use_summary(self, input_data=None) -> str | None:
         """
         返回工具调用摘要文本，用于侧边栏展示。
 
@@ -238,7 +241,7 @@ class AgentTool(Tool[AgentToolInput, AgentToolOutput, None]):
             return input_data.description
         return None
 
-    def get_activity_description(self, input_data=None) -> Optional[str]:
+    def get_activity_description(self, input_data=None) -> str | None:
         """
         返回活动描述文本，用于 spinner 展示当前正在执行的子代理任务。
 
@@ -267,11 +270,11 @@ async def _run_sub_agent(
     prompt: str,
     cwd: str,
     max_turns: int = MAX_AGENT_TURNS,
-    agent_id: Optional[str] = None,
-    interaction_broker: Optional[Any] = None,
-    permission_context: Optional[Any] = None,
-    event_callback: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None,
-) -> tuple[str, Dict[str, int]]:
+    agent_id: str | None = None,
+    interaction_broker: Any | None = None,
+    permission_context: Any | None = None,
+    event_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
+) -> tuple[str, dict[str, int]]:
     """
     运行子代理对话循环
 
@@ -300,7 +303,7 @@ async def _run_sub_agent(
         tool_schemas.append(schema)
 
     # 初始化消息
-    messages: List[Dict[str, Any]] = [
+    messages: list[dict[str, Any]] = [
         {"role": "user", "content": prompt}
     ]
 
@@ -367,14 +370,14 @@ async def _run_sub_agent(
             break
 
         # 执行工具并收集结果
-        from codo.services.tools.streaming_executor import StreamingToolExecutor
         from codo.services.tools.permission_checker import create_default_permission_context
+        from codo.services.tools.streaming_executor import StreamingToolExecutor
 
         assistant_message = {
             "role": "assistant",
             "content": assistant_content,
         }
-        executor_options: Dict[str, Any] = {
+        executor_options: dict[str, Any] = {
             "app_state": {
                 "todos": {agent_id: []} if agent_id else {},
             },
@@ -384,7 +387,7 @@ async def _run_sub_agent(
             "tools": tools,
             "normalize_question_mark": True,
         }
-        executor_context: Dict[str, Any] = {
+        executor_context: dict[str, Any] = {
             "cwd": cwd,
             "agent_id": agent_id,
             "session_id": agent_id or "subagent",
@@ -479,8 +482,8 @@ async def _execute_agent_tool(
     tool_input: dict,
     cwd: str,
     *,
-    agent_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    agent_id: str | None = None,
+) -> dict[str, Any]:
     """
     执行子代理中的单个工具
 
@@ -511,14 +514,14 @@ async def _execute_agent_tool(
 
     try:
         # 使用简化的 execute() 接口，并为子 agent 保留独立的 todo/app_state 命名空间
-        options: Dict[str, Any] = {
+        options: dict[str, Any] = {
             "app_state": {
                 "todos": {agent_id: []} if agent_id else {},
             },
             "agent_id": agent_id,
             "session_id": agent_id or "subagent",
         }
-        context: Dict[str, Any] = {
+        context: dict[str, Any] = {
             "cwd": cwd,
             "agent_id": agent_id,
             "session_id": agent_id or "subagent",
@@ -566,7 +569,7 @@ async def _execute_agent_tool(
             "todo_items": None,
         }
 
-async def _tool_to_schema(tool) -> Dict[str, Any]:
+async def _tool_to_schema(tool) -> dict[str, Any]:
     """
     将工具转换为 API schema（简化版）
 
@@ -574,7 +577,7 @@ async def _tool_to_schema(tool) -> Dict[str, Any]:
         tool: 工具实例
 
     Returns:
-        ?? API 格式的工具 schema
+        模型 API 格式的工具 schema
     """
     name = tool.name
     description = await tool.prompt({})

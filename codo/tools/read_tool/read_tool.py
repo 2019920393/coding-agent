@@ -13,30 +13,33 @@ ReadTool 实现
 """
 
 import os
-from typing import Optional, Callable, Dict, Any
+from collections.abc import Callable
 from datetime import datetime
-from ..base import Tool, ToolUseContext
-from ..types import ToolResult, ValidationResult, ToolCallProgress
-from .types import ReadToolInput, ReadToolOutput
-from .prompt import (
-    READ_TOOL_NAME,
-    DESCRIPTION,
-    get_user_facing_name,
-    get_tool_use_summary,
-    get_activity_description
-)
-from ...utils.path import expandPath, isUncPath
+from typing import Any
+
+from codo.constants import READ_TOOL_RESULT_NEVER_PERSIST
+
 from ...utils.file_read import (
     readFileSyncWithMetadata,
     readFileWithOffset,
-    readPdfFile,
     readImageFile,
-    readNotebookFile
+    readNotebookFile,
+    readPdfFile,
 )
 from ...utils.fs_operations import getFsImplementation
+from ...utils.path import expandPath, isUncPath
+from ..base import Tool
+from ..types import ToolCallProgress, ToolResult, ValidationResult
+from .prompt import (
+    READ_TOOL_NAME,
+    get_activity_description,
+    get_tool_use_summary,
+    get_user_facing_name,
+)
+from .types import ReadToolInput, ReadToolOutput
 
 # 文件读取状态跟踪（用于去重）
-_read_file_state: Dict[str, datetime] = {}
+_read_file_state: dict[str, datetime] = {}
 
 class ReadTool(Tool[ReadToolInput, ReadToolOutput, None]):
     """文件读取工具"""
@@ -44,7 +47,7 @@ class ReadTool(Tool[ReadToolInput, ReadToolOutput, None]):
     def __init__(self):
         """初始化 ReadTool，设置工具名称和无限制的结果大小（防止读取结果被持久化）。"""
         self.name = READ_TOOL_NAME
-        self.max_result_size_chars = float('inf')  # Infinity - 防止读取结果被持久化（避免循环）
+        self.max_result_size_chars = READ_TOOL_RESULT_NEVER_PERSIST
 
     @property
     def input_schema(self) -> type[ReadToolInput]:
@@ -67,7 +70,7 @@ class ReadTool(Tool[ReadToolInput, ReadToolOutput, None]):
 
     async def prompt(self, options: dict) -> str:
         """
-        生成工具描述（用于 ?? API 系统提示词）
+        生成工具描述（用于模型 API 系统提示词）
 
         [Workflow]
         1. 构建基础描述（读取文件能力说明）
@@ -147,7 +150,7 @@ class ReadTool(Tool[ReadToolInput, ReadToolOutput, None]):
         """文件读取是只读操作"""
         return True
 
-    async def validate_input(self, input_data: ReadToolInput, context: ToolUseContext) -> ValidationResult:
+    async def validate_input(self, input_data: ReadToolInput, context: dict[str, Any]) -> ValidationResult:
         """
         验证输入参数
 
@@ -214,8 +217,6 @@ class ReadTool(Tool[ReadToolInput, ReadToolOutput, None]):
                 message='limit 必须大于 0',
             )
 
-        # TODO: 权限检查（未来实现）
-
         return ValidationResult(
             result=True,
         )
@@ -223,10 +224,10 @@ class ReadTool(Tool[ReadToolInput, ReadToolOutput, None]):
     async def call(
         self,
         input_data: ReadToolInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool: Callable,
         parent_message: Any,
-        on_progress: Optional[Callable[[ToolCallProgress], None]] = None
+        on_progress: Callable[[ToolCallProgress], None] | None = None
     ) -> ToolResult[ReadToolOutput]:
         """
         读取文件
@@ -249,7 +250,6 @@ class ReadTool(Tool[ReadToolInput, ReadToolOutput, None]):
 
             # 检查去重（如果文件未修改，可能跳过读取）
             current_mtime = fs.getModificationTime(file_path)
-            last_read_mtime = _read_file_state.get(file_path)
 
             # 特殊文件处理
             if ext == '.pdf':
@@ -287,13 +287,11 @@ class ReadTool(Tool[ReadToolInput, ReadToolOutput, None]):
                         limit=input_data.limit
                     )
                     line_count = total_lines
-                    is_partial = True
                 else:
                     # 完整读取
                     result = readFileSyncWithMetadata(file_path)
                     content = result.content
                     line_count = result.lineCount
-                    is_partial = False
 
                     if result.isBinary:
                         return ToolResult(

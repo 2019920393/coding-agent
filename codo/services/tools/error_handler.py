@@ -4,9 +4,10 @@
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,8 @@ class ToolError:
     error_type: str
     error_message: str
     severity: ErrorSeverity = ErrorSeverity.ERROR
-    stack_trace: Optional[str] = None
-    context: Dict[str, Any] = field(default_factory=dict)
+    stack_trace: str | None = None
+    context: dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=lambda: __import__('time').time())
 
 @dataclass
@@ -69,8 +70,8 @@ class ErrorHandler:
 
     def __init__(self):
         """初始化错误处理器"""
-        self._errors: List[ToolError] = []
-        self._error_callbacks: List[Callable[[ToolError], None]] = []
+        self._errors: list[ToolError] = []
+        self._error_callbacks: list[Callable[[ToolError], None]] = []
 
     def register_error_callback(
         self,
@@ -89,7 +90,7 @@ class ErrorHandler:
         tool_use_id: str,
         tool_name: str,
         error: Exception,
-        context: Optional[Dict[str, Any]] = None
+        context: dict[str, Any] | None = None
     ) -> ToolError:
         """
         处理工具错误
@@ -157,13 +158,13 @@ class ErrorHandler:
             return ErrorSeverity.ERROR
 
         # 文件不存在等常见错误
-        if isinstance(error, (FileNotFoundError, ValueError)):
+        if isinstance(error, FileNotFoundError | ValueError):
             return ErrorSeverity.ERROR
 
         # 默认为 ERROR
         return ErrorSeverity.ERROR
 
-    def _get_stack_trace(self, error: Exception) -> Optional[str]:
+    def _get_stack_trace(self, error: Exception) -> str | None:
         """
         获取堆栈跟踪
 
@@ -190,9 +191,9 @@ class ErrorHandler:
 
     def get_errors(
         self,
-        tool_use_id: Optional[str] = None,
-        severity: Optional[ErrorSeverity] = None
-    ) -> List[ToolError]:
+        tool_use_id: str | None = None,
+        severity: ErrorSeverity | None = None
+    ) -> list[ToolError]:
         """
         获取错误列表
 
@@ -222,7 +223,7 @@ class ErrorHandler:
         """
         return any(e.severity == ErrorSeverity.CRITICAL for e in self._errors)
 
-    def clear_errors(self, tool_use_id: Optional[str] = None) -> None:
+    def clear_errors(self, tool_use_id: str | None = None) -> None:
         """
         清除错误记录
 
@@ -246,7 +247,7 @@ class RollbackManager:
 
     def __init__(self):
         """初始化回滚管理器"""
-        self._actions: Dict[str, List[RollbackAction]] = {}
+        self._actions: dict[str, list[RollbackAction]] = {}
 
     def register_rollback(
         self,
@@ -311,7 +312,7 @@ class RollbackManager:
         """
         self._actions.pop(tool_use_id, None)
 
-    def get_rollback_actions(self, tool_use_id: str) -> List[RollbackAction]:
+    def get_rollback_actions(self, tool_use_id: str) -> list[RollbackAction]:
         """
         获取回滚操作列表
 
@@ -324,8 +325,8 @@ class RollbackManager:
         return self._actions.get(tool_use_id, [])
 
 # 全局实例
-_global_error_handler: Optional[ErrorHandler] = None
-_global_rollback_manager: Optional[RollbackManager] = None
+_global_error_handler: ErrorHandler | None = None
+_global_rollback_manager: RollbackManager | None = None
 
 def get_error_handler() -> ErrorHandler:
     """获取全局错误处理器"""

@@ -10,8 +10,9 @@
 """
 
 import asyncio
-from typing import AsyncGenerator, TypeVar, Callable, List, Any, Optional
 from collections import deque
+from collections.abc import AsyncGenerator, Callable
+from typing import TypeVar
 
 T = TypeVar('T')
 U = TypeVar('U')
@@ -152,7 +153,7 @@ async def async_filter(
         if predicate(item):
             yield item
 
-async def async_collect(generator: AsyncGenerator[T, None]) -> List[T]:
+async def async_collect(generator: AsyncGenerator[T, None]) -> list[T]:
     """
     收集异步生成器的所有值到列表
 
@@ -250,6 +251,7 @@ class AsyncGeneratorPool:
         self.max_concurrency = max_concurrency
         self._active: set = set()
         self._queue: deque = deque()
+        self._slots = asyncio.Semaphore(max_concurrency)
 
     async def add(self, generator: AsyncGenerator[T, None]) -> AsyncGenerator[T, None]:
         """
@@ -263,19 +265,14 @@ class AsyncGeneratorPool:
         Yields:
             生成器产出的值
         """
-        # [Workflow] 等待有空闲槽位
-        while len(self._active) >= self.max_concurrency:
-            await asyncio.sleep(0.01)
-
-        # [Workflow] 执行生成器
-        task_id = id(generator)
-        self._active.add(task_id)
-
-        try:
-            async for item in generator:
-                yield item
-        finally:
-            self._active.discard(task_id)
+        async with self._slots:
+            task_id = id(generator)
+            self._active.add(task_id)
+            try:
+                async for item in generator:
+                    yield item
+            finally:
+                self._active.discard(task_id)
 
     @property
     def active_count(self) -> int:

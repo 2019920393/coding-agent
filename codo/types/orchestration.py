@@ -8,10 +8,12 @@
 - ExecutionStatus: 执行状态
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Callable, Optional, List
 from datetime import datetime
+from enum import Enum
+from typing import Any
+
 
 class ExecutionStatus(str, Enum):
     """
@@ -64,7 +66,7 @@ class ToolExecutionTask:
     封装单个工具的执行信息和状态。
 
     Attributes:
-        tool_use_id: 工具调用ID（对应 ?? API 的 tool_use.id）
+        tool_use_id: 工具调用ID（对应模型 API 的 tool_use.id）
         tool_name: 工具名称
         tool_input: 工具输入参数
         is_concurrency_safe: 是否并发安全
@@ -80,14 +82,14 @@ class ToolExecutionTask:
     tool_input: dict
     is_concurrency_safe: bool
     status: ExecutionStatus = ExecutionStatus.QUEUED
-    result: Optional[Any] = None
-    error: Optional[Exception] = None
-    context_modifier: Optional[ContextModifier] = None
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    result: Any | None = None
+    error: Exception | None = None
+    context_modifier: ContextModifier | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         """
         获取执行耗时（秒）
 
@@ -130,8 +132,8 @@ class Batch:
         batch_id: 批次ID（用于日志）
     """
     is_concurrency_safe: bool
-    tasks: List[ToolExecutionTask] = field(default_factory=list)
-    batch_id: Optional[str] = None
+    tasks: list[ToolExecutionTask] = field(default_factory=list)
+    batch_id: str | None = None
 
     @property
     def size(self) -> int:
@@ -162,7 +164,7 @@ class Batch:
         """
         self.tasks.append(task)
 
-    def get_context_modifiers(self) -> List[ContextModifier]:
+    def get_context_modifiers(self) -> list[ContextModifier]:
         """
         获取批次内所有上下文修改器
 
@@ -189,13 +191,15 @@ class OrchestrationResult:
         failed_tasks: 失败任务数
         total_duration: 总耗时（秒）
         context_modifiers: 所有上下文修改器
+        updated_context: 应用上下文修改器后的执行上下文
     """
-    batches: List[Batch]
+    batches: list[Batch]
     total_tasks: int
     completed_tasks: int
     failed_tasks: int
     total_duration: float
-    context_modifiers: List[ContextModifier] = field(default_factory=list)
+    context_modifiers: list[ContextModifier] = field(default_factory=list)
+    updated_context: dict[str, Any] = field(default_factory=dict)
 
     @property
     def success_rate(self) -> float:

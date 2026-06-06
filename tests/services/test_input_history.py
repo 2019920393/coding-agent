@@ -2,21 +2,20 @@
 Test input history functionality
 """
 
-import os
 import sys
 import tempfile
 from pathlib import Path
 
 # 注意：已从根目录移入 Codo_new/tests/services/，不再需要手动添加路径
 # 通过 pip install -e . 安装后，codo 包可直接导入
-
 from codo.services.input_history import (
     InputHistory,
     PastedContent,
-    format_pasted_text_ref,
+    expand_pasted_text_refs,
     format_image_ref,
-    expand_pasted_text_refs
+    format_pasted_text_ref,
 )
+
 
 def test_basic_history():
     """Test basic history add and retrieve"""

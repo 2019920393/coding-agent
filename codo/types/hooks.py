@@ -8,7 +8,8 @@ Hook 系统支持在工具执行的不同阶段插入自定义逻辑：
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional, List
+from typing import Any, Literal
+
 from codo.types.permissions import PermissionBehavior
 
 # ============================================================================
@@ -34,7 +35,7 @@ class PreToolUseHookInput:
     4. 阻止工具执行
     """
     tool_name: str  # 工具名称
-    tool_input: Dict[str, Any]  # 工具输入
+    tool_input: dict[str, Any]  # 工具输入
     tool_use_id: str  # 工具使用 ID
     cwd: str  # 当前工作目录
     hook_event_name: Literal["PreToolUse"] = "PreToolUse"  # Hook 事件名称
@@ -55,7 +56,7 @@ class PostToolUseHookInput:
     4. 记录或审计工具使用
     """
     tool_name: str  # 工具名称
-    tool_input: Dict[str, Any]  # 工具输入
+    tool_input: dict[str, Any]  # 工具输入
     tool_response: Any  # 工具响应
     tool_use_id: str  # 工具使用 ID
     cwd: str  # 当前工作目录
@@ -77,7 +78,7 @@ class PostToolUseFailureHookInput:
     4. 触发补救措施
     """
     tool_name: str  # 工具名称
-    tool_input: Dict[str, Any]  # 工具输入
+    tool_input: dict[str, Any]  # 工具输入
     tool_use_id: str  # 工具使用 ID
     error: str  # 错误消息
     cwd: str  # 当前工作目录
@@ -110,21 +111,21 @@ class HookResult:
     outcome: Literal["success", "blocking", "non_blocking_error", "cancelled"] = "success"
 
     # 权限决策（仅 PreToolUse Hook）
-    permission_behavior: Optional[PermissionBehavior] = None  # allow/deny/ask
-    permission_decision_reason: Optional[str] = None  # 权限决策原因
+    permission_behavior: PermissionBehavior | None = None  # allow/deny/ask
+    permission_decision_reason: str | None = None  # 权限决策原因
 
     # 输入/输出修改
-    updated_input: Optional[Dict[str, Any]] = None  # 修改后的工具输入（PreToolUse）
-    updated_output: Optional[Any] = None  # 修改后的工具输出（PostToolUse）
+    updated_input: dict[str, Any] | None = None  # 修改后的工具输入（PreToolUse）
+    updated_output: Any | None = None  # 修改后的工具输出（PostToolUse）
 
     # 控制标志
     prevent_continuation: bool = False  # 是否阻止继续执行
-    stop_reason: Optional[str] = None  # 停止原因
+    stop_reason: str | None = None  # 停止原因
     retry: bool = False  # 是否重试（PostToolUseFailure）
 
     # 额外信息
-    additional_context: Optional[str] = None  # 额外上下文信息
-    error_message: Optional[str] = None  # 错误消息
+    additional_context: str | None = None  # 额外上下文信息
+    error_message: str | None = None  # 错误消息
 
 @dataclass
 class AggregatedHookResult:
@@ -141,20 +142,20 @@ class AggregatedHookResult:
     3. 上下文信息收集
     """
     # 权限决策（聚合后）
-    permission_behavior: Optional[PermissionBehavior] = None  # 最终权限决策
-    permission_decision_reason: Optional[str] = None  # 决策原因
+    permission_behavior: PermissionBehavior | None = None  # 最终权限决策
+    permission_decision_reason: str | None = None  # 决策原因
 
     # 输入/输出修改（聚合后）
-    updated_input: Optional[Dict[str, Any]] = None  # 最终修改后的输入
-    updated_output: Optional[Any] = None  # 最终修改后的输出
+    updated_input: dict[str, Any] | None = None  # 最终修改后的输入
+    updated_output: Any | None = None  # 最终修改后的输出
 
     # 控制标志
     prevent_continuation: bool = False  # 是否阻止继续
-    stop_reason: Optional[str] = None  # 停止原因
+    stop_reason: str | None = None  # 停止原因
     retry: bool = False  # 是否重试
 
     # 额外信息（收集所有 Hook 的上下文）
-    additional_contexts: List[str] = None  # 所有额外上下文
+    additional_contexts: list[str] = None  # 所有额外上下文
 
     def __post_init__(self):
         """初始化默认值"""
@@ -178,6 +179,6 @@ class HookConfig:
     3. Hook 事件类型
     """
     command: str  # Hook 命令或脚本路径
-    tool_name: Optional[str] = None  # 匹配的工具名称（None=所有工具）
+    tool_name: str | None = None  # 匹配的工具名称（None=所有工具）
     event: HookEventName = "PreToolUse"  # Hook 事件类型
     timeout: int = 5000  # 超时时间（毫秒），默认 5 秒

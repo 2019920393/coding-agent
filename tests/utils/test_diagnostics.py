@@ -2,18 +2,12 @@
 诊断日志系统测试
 """
 
-import os
 import json
+import os
 import tempfile
-from pathlib import Path
 
-from codo.utils.diagnostics import (
-    log_diagnostics,
-    log_info,
-    log_error,
-    log_warn,
-    log_debug
-)
+from codo.utils.diagnostics import log_debug, log_diagnostics, log_error, log_info, log_warn
+
 
 def test_log_diagnostics_basic():
     """测试基本日志记录"""
@@ -28,7 +22,7 @@ def test_log_diagnostics_basic():
             assert os.path.exists(log_file)
 
             # 读取并验证日志内容
-            with open(log_file, 'r') as f:
+            with open(log_file) as f:
                 line = f.readline()
                 entry = json.loads(line)
 
@@ -76,7 +70,7 @@ def test_log_level_helpers():
             log_debug('debug_event')
 
             # 读取所有日志
-            with open(log_file, 'r') as f:
+            with open(log_file) as f:
                 lines = f.readlines()
 
             assert len(lines) == 4
@@ -102,7 +96,7 @@ def test_log_diagnostics_append():
             log_info('event3')
 
             # 读取所有日志
-            with open(log_file, 'r') as f:
+            with open(log_file) as f:
                 lines = f.readlines()
 
             assert len(lines) == 3

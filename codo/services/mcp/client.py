@@ -10,13 +10,14 @@ MCP 客户端管理
 """
 
 from contextlib import AsyncExitStack
-from typing import Dict, Any, Optional, List
+from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from .config import MCPConfigManager
-from .types import MCPServerConnection, MCPToolInfo, MCPResourceInfo, MCPTransportType
+from .types import MCPResourceInfo, MCPServerConnection, MCPToolInfo, MCPTransportType
+
 
 class MCPClientManager:
     """
@@ -36,9 +37,9 @@ class MCPClientManager:
             config_manager: 配置管理器
         """
         self.config_manager = config_manager
-        self._sessions: Dict[str, ClientSession] = {}
-        self._session_stacks: Dict[str, AsyncExitStack] = {}
-        self._connections: Dict[str, MCPServerConnection] = {}
+        self._sessions: dict[str, ClientSession] = {}
+        self._session_stacks: dict[str, AsyncExitStack] = {}
+        self._connections: dict[str, MCPServerConnection] = {}
 
     async def connect(self, server_name: str) -> bool:
         """
@@ -142,7 +143,7 @@ class MCPClientManager:
         if server_name in self._connections:
             del self._connections[server_name]
 
-    async def list_tools(self, server_name: str) -> List[MCPToolInfo]:
+    async def list_tools(self, server_name: str) -> list[MCPToolInfo]:
         """
         列出服务器提供的工具
 
@@ -172,13 +173,13 @@ class MCPClientManager:
             return tools
 
         except Exception as e:
-            raise RuntimeError(f"列出工具失败: {e}")
+            raise RuntimeError(f"列出工具失败: {e}") from e
 
     async def call_tool(
         self,
         server_name: str,
         tool_name: str,
-        arguments: Dict[str, Any]
+        arguments: dict[str, Any]
     ) -> Any:
         """
         调用 MCP 工具
@@ -200,9 +201,9 @@ class MCPClientManager:
             return result
 
         except Exception as e:
-            raise RuntimeError(f"调用工具失败: {e}")
+            raise RuntimeError(f"调用工具失败: {e}") from e
 
-    async def list_resources(self, server_name: str) -> List[MCPResourceInfo]:
+    async def list_resources(self, server_name: str) -> list[MCPResourceInfo]:
         """
         列出服务器提供的资源
 
@@ -233,7 +234,7 @@ class MCPClientManager:
             return resources
 
         except Exception as e:
-            raise RuntimeError(f"列出资源失败: {e}")
+            raise RuntimeError(f"列出资源失败: {e}") from e
 
     async def read_resource(self, server_name: str, uri: str) -> Any:
         """
@@ -255,9 +256,9 @@ class MCPClientManager:
             return result
 
         except Exception as e:
-            raise RuntimeError(f"读取资源失败: {e}")
+            raise RuntimeError(f"读取资源失败: {e}") from e
 
-    def get_connection_status(self, server_name: str) -> Optional[MCPServerConnection]:
+    def get_connection_status(self, server_name: str) -> MCPServerConnection | None:
         """
         获取服务器连接状态
 
@@ -269,7 +270,7 @@ class MCPClientManager:
         """
         return self._connections.get(server_name)
 
-    def list_connections(self) -> List[MCPServerConnection]:
+    def list_connections(self) -> list[MCPServerConnection]:
         """
         列出所有连接状态
 

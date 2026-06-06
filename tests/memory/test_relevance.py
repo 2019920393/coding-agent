@@ -5,20 +5,18 @@ relevance.py 单元测试
 覆盖：关键词提取、相关性评分、文件过滤、边界情况。
 """
 
-import os
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
-from typing import Set
 
 import pytest
 
 from codo.services.memory.relevance import (
+    MAX_RELEVANT_MEMORIES,
+    RelevantMemory,
     _extract_keywords,
     _score_memory,
     find_relevant_memories,
-    RelevantMemory,
-    MAX_RELEVANT_MEMORIES,
 )
 from codo.services.memory.scan import MemoryHeader
 

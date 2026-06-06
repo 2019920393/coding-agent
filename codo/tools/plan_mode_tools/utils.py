@@ -2,7 +2,6 @@
 import os
 import random
 from pathlib import Path
-from typing import Optional
 
 # 简单的词库用于生成 slug
 ADJECTIVES = [
@@ -34,7 +33,7 @@ def get_plans_directory() -> str:
 
     return str(plans_dir)
 
-def get_plan_file_path(session_id: str, agent_id: Optional[str] = None) -> str:
+def get_plan_file_path(session_id: str, agent_id: str | None = None) -> str:
     """获取计划文件路径
 
     Args:
@@ -58,7 +57,7 @@ def get_plan_file_path(session_id: str, agent_id: Optional[str] = None) -> str:
 
     return os.path.join(plans_dir, filename)
 
-def read_plan_file(file_path: str) -> Optional[str]:
+def read_plan_file(file_path: str) -> str | None:
     """读取计划文件
 
     Args:
@@ -68,7 +67,7 @@ def read_plan_file(file_path: str) -> Optional[str]:
         计划内容，如果文件不存在返回 None
     """
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             return f.read()
     except FileNotFoundError:
         return None

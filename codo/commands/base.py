@@ -7,9 +7,11 @@
 保留 local 和 prompt 两种类型。
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+
 
 class CommandType(str, Enum):
     """
@@ -39,7 +41,7 @@ class CommandResult:
     # 结果内容
     value: str = ""
     # 额外数据（如 compact 结果中的 compactionResult）
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 
 @dataclass
 class CommandArgumentOption:
@@ -55,7 +57,7 @@ class CommandArgumentSpec:
 
     kind: str = "text"
     placeholder: str = ""
-    options: List[CommandArgumentOption] = field(default_factory=list)
+    options: list[CommandArgumentOption] = field(default_factory=list)
     allow_custom: bool = True
 
 @dataclass
@@ -75,23 +77,23 @@ class Command:
 
     type: CommandType = CommandType.LOCAL
 
-    aliases: List[str] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)
 
     argument_hint: str = ""
-    # 结构化参数定义，供 Textual UI 生成选择器/占位提示
-    argument_spec: Optional[CommandArgumentSpec] = None
+    # 结构化参数定义，供 Desktop UI 生成选择器/占位提示
+    argument_spec: CommandArgumentSpec | None = None
 
     is_hidden: bool = False
 
-    is_enabled: Optional[Callable[[], bool]] = None
+    is_enabled: Callable[[], bool] | None = None
 
     source: str = "builtin"
 
     # 签名：async def execute(args: str, context: dict) -> CommandResult
-    execute: Optional[Callable] = None
+    execute: Callable | None = None
 
     # 签名：async def get_prompt(args: str, context: dict) -> str
-    get_prompt: Optional[Callable] = None
+    get_prompt: Callable | None = None
 
     def enabled(self) -> bool:
         """

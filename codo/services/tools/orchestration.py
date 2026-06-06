@@ -16,27 +16,69 @@
 """
 
 import asyncio
-from typing import List, Dict, Any, Optional, AsyncGenerator
+import logging
+import math
+from collections.abc import AsyncGenerator
 from datetime import datetime
+from typing import Any
 
+from codo.services.tools.concurrency import ToolExecutionQueue
+from codo.services.tools.permission_prompt import (
+    PermissionChoice,
+    apply_session_allow_rule,
+    format_tool_info,
+)
+from codo.tools.base import Tool
+from codo.tools_registry import find_tool_by_name, get_all_tools
 from codo.types.orchestration import (
     Batch,
-    ToolExecutionTask,
     ContextModifier,
+    ExecutionStatus,
     OrchestrationResult,
-    ExecutionStatus
+    ToolExecutionTask,
 )
-from codo.services.tools.concurrency import ToolExecutionQueue
-from codo.tools.base import Tool, ToolUseContext
-from codo.tools_registry import get_all_tools, find_tool_by_name
+from codo.types.runtime import InteractionOption, InteractionRequest
 
-def _get_context_options(context: Dict[str, Any]) -> Dict[str, Any]:
+logger = logging.getLogger(__name__)
+
+
+class ToolOrchestrationError(RuntimeError):
+    pass
+
+
+async def _request_permission_choice(
+    task: ToolExecutionTask,
+    tool_input: dict[str, Any],
+    message: str,
+    context: dict[str, Any],
+) -> PermissionChoice:
+    interaction_broker = context.get("interaction_broker") or context.get("runtime_controller")
+    if interaction_broker is None:
+        raise ToolOrchestrationError("interaction_broker is required for permission prompts")
+    request = InteractionRequest(
+        request_id=f"req_permission_{task.tool_use_id}",
+        kind="permission",
+        label=f"Awaiting approval for {task.tool_name}",
+        tool_name=task.tool_name,
+        tool_info=format_tool_info(task.tool_name, tool_input),
+        message=message,
+        options=[
+            InteractionOption(value=PermissionChoice.ALLOW_ONCE.value, label="Allow once"),
+            InteractionOption(value=PermissionChoice.ALLOW_ALWAYS.value, label="Allow always"),
+            InteractionOption(value=PermissionChoice.DENY.value, label="Deny"),
+            InteractionOption(value=PermissionChoice.ABORT.value, label="Abort"),
+        ],
+    )
+    choice = await interaction_broker.request(request)
+    return PermissionChoice(choice or PermissionChoice.ABORT.value)
+
+def _get_context_options(context: dict[str, Any]) -> dict[str, Any]:
     """
     提取上下文 options。
     """
-    return ToolUseContext.coerce(context).get_options()
+    return context.get("options", {})
 
-def _resolve_tool_pool(context: Dict[str, Any]) -> List[Tool]:
+def _resolve_tool_pool(context: dict[str, Any]) -> list[Tool]:
     """
     统一工具来源：优先使用运行时 context.options.tools，其次回退 registry。
 
@@ -49,9 +91,9 @@ def _resolve_tool_pool(context: Dict[str, Any]) -> List[Tool]:
     return get_all_tools()
 
 def partition_tool_calls(
-    tool_calls: List[Dict[str, Any]],
-    context: Dict[str, Any]
-) -> List[Batch]:
+    tool_calls: list[dict[str, Any]],
+    context: dict[str, Any]
+) -> list[Batch]:
     """
     批处理分区
 
@@ -71,7 +113,7 @@ def partition_tool_calls(
     Returns:
         批次列表
     """
-    batches: List[Batch] = []
+    batches: list[Batch] = []
 
     tool_pool = _resolve_tool_pool(context)
 
@@ -91,7 +133,7 @@ def partition_tool_calls(
                 tool_input=tool_input,
                 is_concurrency_safe=False,
                 status=ExecutionStatus.FAILED,
-                error=Exception(f"Tool not found: {tool_name}")
+                error=ToolOrchestrationError(f"Tool not found: {tool_name}")
             )
             # 非并发安全工具，单独批次
             batches.append(Batch(is_concurrency_safe=False, tasks=[task]))
@@ -108,7 +150,7 @@ def partition_tool_calls(
                 tool_input=tool_input,
                 is_concurrency_safe=False,
                 status=ExecutionStatus.FAILED,
-                error=Exception(f"Invalid input: {str(e)}")
+                error=ToolOrchestrationError(f"Invalid input: {e}")
             )
             batches.append(Batch(is_concurrency_safe=False, tasks=[task]))
             continue
@@ -141,10 +183,10 @@ def partition_tool_calls(
 
 async def execute_single_tool(
     task: ToolExecutionTask,
-    context: Dict[str, Any],
-    pre_hooks: Optional[List] = None,
-    post_hooks: Optional[List] = None,
-    post_failure_hooks: Optional[List] = None
+    context: dict[str, Any],
+    pre_hooks: list | None = None,
+    post_hooks: list | None = None,
+    post_failure_hooks: list | None = None
 ) -> None:
     """
     执行单个工具（带权限检查和 Hook 支持）
@@ -167,13 +209,13 @@ async def execute_single_tool(
         post_failure_hooks: PostToolUseFailure Hook 列表
     """
     try:
-        tool_context = ToolUseContext.coerce(context)
+        tool_context = context
 
         # [Workflow] 0. 检查 AbortController 是否已中断
         abort_controller = tool_context.get("abort_controller")
         if abort_controller and abort_controller.is_aborted():
             from codo.utils.abort_controller import get_abort_message
-            raise Exception(get_abort_message(abort_controller.get_reason()))
+            raise ToolOrchestrationError(get_abort_message(abort_controller.get_reason()))
 
         # [Workflow] 1. 运行 PreToolUse Hooks
         if pre_hooks:
@@ -200,7 +242,7 @@ async def execute_single_tool(
         tool_pool = _resolve_tool_pool(tool_context)
         tool = find_tool_by_name(tool_pool, task.tool_name)
         if not tool:
-            raise Exception(f"工具未找到: {task.tool_name}")
+            raise ToolOrchestrationError(f"Tool not found: {task.tool_name}")
 
         # [Workflow] 3. 权限检查
         if tool.requires_permission(task.tool_input):
@@ -220,16 +262,16 @@ async def execute_single_tool(
             # 如果需要询问用户，显示交互式权限提示
             # Based on interactiveHandler.ts in reference project
             if permission_decision.behavior == "ask":
-                from codo.services.tools.permission_prompt import (
-                    prompt_permission,
-                    apply_session_allow_rule,
-                    PermissionChoice,
+                input_dict = (
+                    task.tool_input
+                    if isinstance(task.tool_input, dict)
+                    else dict(getattr(task.tool_input, "__dict__", {}))
                 )
-
-                choice = await prompt_permission(
-                    tool_name=task.tool_name,
-                    tool_input=task.tool_input,
-                    message=permission_decision.message,
+                choice = await _request_permission_choice(
+                    task,
+                    input_dict,
+                    permission_decision.message,
+                    tool_context,
                 )
 
                 if choice == PermissionChoice.ALLOW_ONCE:
@@ -257,11 +299,11 @@ async def execute_single_tool(
         from codo.utils.tool_result_storage import ToolResultStorage
 
         # 获取工具的 maxResultSizeChars 限制
-        raw_max_size = getattr(tool, "max_result_size_chars", float("inf"))
-        max_size = raw_max_size if isinstance(raw_max_size, (int, float)) else float("inf")
+        raw_max_size = getattr(tool, "max_result_size_chars", math.inf)
+        max_size = raw_max_size if isinstance(raw_max_size, int | float) else math.inf
 
         # 如果结果超过限制，截断并持久化
-        if max_size != float('inf'):
+        if math.isfinite(max_size):
             result_storage = ToolResultStorage(tool_context.get("cwd", ""))
             result = result_storage.maybe_truncate_result(
                 result=result,
@@ -293,7 +335,7 @@ async def execute_single_tool(
         task.status = ExecutionStatus.COMPLETED
 
         # [Workflow] 7. 获取上下文修改器
-        modifier = tool.get_context_modifier(task.tool_input, result, tool_context.to_dict())
+        modifier = tool.get_context_modifier(task.tool_input, result, tool_context)
         if modifier:
             task.context_modifier = ContextModifier(
                 tool_use_id=task.tool_use_id,
@@ -323,7 +365,7 @@ async def execute_single_tool(
                     pass
             except Exception as hook_error:
                 # Hook 执行失败不应影响原始错误
-                print(f"警告: PostToolUseFailure Hook 执行失败: {hook_error}")
+                logger.warning("PostToolUseFailure hook failed: %s", hook_error)
 
         # [Workflow] 记录错误
         task.status = ExecutionStatus.FAILED
@@ -331,11 +373,11 @@ async def execute_single_tool(
 
 async def run_batch_concurrently(
     batch: Batch,
-    context: Dict[str, Any],
+    context: dict[str, Any],
     queue: ToolExecutionQueue,
-    pre_hooks: Optional[List] = None,
-    post_hooks: Optional[List] = None,
-    post_failure_hooks: Optional[List] = None
+    pre_hooks: list | None = None,
+    post_hooks: list | None = None,
+    post_failure_hooks: list | None = None
 ) -> None:
     """
     并发执行批次
@@ -373,11 +415,11 @@ async def run_batch_concurrently(
 
 async def run_batch_serially(
     batch: Batch,
-    context: Dict[str, Any],
+    context: dict[str, Any],
     queue: ToolExecutionQueue,
-    pre_hooks: Optional[List] = None,
-    post_hooks: Optional[List] = None,
-    post_failure_hooks: Optional[List] = None
+    pre_hooks: list | None = None,
+    post_hooks: list | None = None,
+    post_failure_hooks: list | None = None
 ) -> None:
     """
     串行执行批次
@@ -407,9 +449,9 @@ async def run_batch_serially(
             await queue.release_task(task)
 
 def aggregate_context_modifiers(
-    batches: List[Batch],
-    initial_context: Dict[str, Any]
-) -> Dict[str, Any]:
+    batches: list[Batch],
+    initial_context: dict[str, Any]
+) -> dict[str, Any]:
     """
     聚合上下文修改器
 
@@ -431,17 +473,17 @@ def aggregate_context_modifiers(
                 context = modifier.apply(context)
             except Exception as e:
                 # 上下文修改失败，记录但不中断
-                print(f"警告: 上下文修改器失败: {e}")
+                logger.warning("Context modifier failed: %s", e)
 
     return context
 
 async def run_tools_batch(
-    tool_calls: List[Dict[str, Any]],
-    context: Dict[str, Any],
-    max_concurrency: Optional[int] = None,
-    pre_hooks: Optional[List] = None,
-    post_hooks: Optional[List] = None,
-    post_failure_hooks: Optional[List] = None
+    tool_calls: list[dict[str, Any]],
+    context: dict[str, Any],
+    max_concurrency: int | None = None,
+    pre_hooks: list | None = None,
+    post_hooks: list | None = None,
+    post_failure_hooks: list | None = None
 ) -> OrchestrationResult:
     """
     批量执行工具（主入口）
@@ -497,16 +539,17 @@ async def run_tools_batch(
         completed_tasks=queue.completed_count,
         failed_tasks=queue.failed_count,
         total_duration=total_duration,
-        context_modifiers=all_modifiers
+        context_modifiers=all_modifiers,
+        updated_context=updated_context,
     )
 
     return result
 
 async def run_tools_batch_streaming(
-    tool_calls: List[Dict[str, Any]],
-    context: Dict[str, Any],
-    max_concurrency: Optional[int] = None
-) -> AsyncGenerator[Dict[str, Any], None]:
+    tool_calls: list[dict[str, Any]],
+    context: dict[str, Any],
+    max_concurrency: int | None = None
+) -> AsyncGenerator[dict[str, Any], None]:
     """
     批量执行工具（流式版本）
 

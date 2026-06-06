@@ -18,60 +18,77 @@ QueryEngine - 对话核心引擎
 import asyncio
 import json
 import logging
-import os
-from datetime import datetime
-from pathlib import Path
-from typing import AsyncGenerator, Dict, List, Optional, Any
+from collections.abc import AsyncGenerator
+from typing import Any
 from uuid import uuid4
 
-from anthropic import Anthropic, AsyncAnthropic
-from anthropic.types import Message, MessageStreamEvent
+from anthropic import AsyncAnthropic
 
-from codo.tools_registry import get_all_tools
-from codo.session import SessionStorage
+from codo.constants import DEFAULT_MODEL
+
 # 导入新的 query 主循环
-from codo.query import query, QueryParams, Terminal
-# 导入 Prompt 系统
-from codo.services.prompt.builder import PromptBuilder
-from codo.services.prompt.tools import tools_to_api_schemas
-from codo.services.prompt.messages import normalize_messages_for_api
-# 兼容旧测试桩：保留 run_tools_batch 模块符号
-from codo.services.tools.orchestration import run_tools_batch  # noqa: F401
-# 导入 MCP 工具系统
-from codo.services.mcp import MCPClientManager, MCPConfigManager
-from codo.services.mcp.tool_factory import fetch_all_mcp_tools
+from codo.query import QueryParams, Terminal, query
+from codo.runtime_protocol import (
+    QueryRuntimeController,
+    RuntimeCheckpoint,
+    RuntimeCommand,
+    RuntimeEvent,
+)
+
 # 导入 Compact 和 Token 系统
 from codo.services.compact import (
     AutoCompactState,
     CompactResult,
-    auto_compact_if_needed,
     compact_conversation,
 )
+from codo.services.compact.microcompact import preview_microcompact
+
+# 导入 MCP 工具系统
+from codo.services.mcp import MCPClientManager, MCPConfigManager
+from codo.services.mcp.tool_factory import fetch_all_mcp_tools
+
+# 导入 Memory 提取系统
+from codo.services.memory.extract import MemoryExtractionState
+
+# 导入 Prompt 系统
+from codo.services.prompt.builder import PromptBuilder
+from codo.services.prompt.messages import normalize_messages_for_api
+from codo.services.prompt.tools import tools_to_api_schemas
 from codo.services.token_estimation import (
     TokenBudget,
     estimate_messages_tokens,
 )
-from codo.services.compact.microcompact import preview_microcompact
-# 导入 API 错误处理
-from codo.services.api.errors import (
-    classify_api_error,
-    format_api_error,
-    is_prompt_too_long_error,
-    is_retryable,
-    APIErrorCategory,
-    with_retry,
-)
-# 导入 Memory 提取系统
-from codo.services.memory.extract import (
-    extract_memories,
-    MemoryExtractionState,
-)
+
+# 兼容旧测试桩：保留 run_tools_batch 模块符号
+from codo.services.tools.orchestration import run_tools_batch  # noqa: F401
+from codo.session import SessionStorage
 from codo.tools.skill_tool import skill_tool
+from codo.tools_registry import get_all_tools
+from codo.types.runtime import ThinkingConfig
+
 # 导入 AbortController
-from codo.utils.abort_controller import AbortController, AbortedError, get_abort_message
-from codo.runtime_protocol import QueryRuntimeController, RuntimeCheckpoint, RuntimeCommand, RuntimeEvent
+from codo.utils.abort_controller import AbortController, get_abort_message
+from codo.utils.serialize import serialize_to_json
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_interaction_data(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+
+    serialized = serialize_to_json(value)
+    try:
+        return json.dumps(serialized, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        logger.warning(
+            "Discarding non-serializable interaction response data: %s",
+            type(value).__name__,
+        )
+        return None
+
 
 class QueryEngine:
     """
@@ -92,7 +109,8 @@ class QueryEngine:
         api_key: str,
         cwd: str,
         verbose: bool = False,
-        model: str = "claude-opus-4-20250514",
+        model: str = DEFAULT_MODEL,
+        base_url: str | None = None,
     ) -> "QueryEngine":
         """
         从现有会话 ID 创建 QueryEngine 并恢复历史
@@ -119,6 +137,7 @@ class QueryEngine:
             model=model,
             session_id=session_id,
             enable_persistence=True,
+            base_url=base_url,
         )
 
         # 恢复会话历史
@@ -128,17 +147,17 @@ class QueryEngine:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         cwd: str = ".",
         verbose: bool = False,
-        model: str = "claude-opus-4-20250514",
-        session_id: Optional[str] = None,
+        model: str = DEFAULT_MODEL,
+        session_id: str | None = None,
         enable_persistence: bool = True,
-        initial_messages: Optional[List[Dict[str, Any]]] = None,
-        base_url: Optional[str] = None,
-        max_turns: Optional[int] = None,
-        thinking_config: Optional[Dict[str, Any]] = None,
-        client: Optional[Any] = None,
+        initial_messages: list[dict[str, Any]] | None = None,
+        base_url: str | None = None,
+        max_turns: int | None = None,
+        thinking_config: ThinkingConfig | None = None,
+        client: AsyncAnthropic | None = None,
     ):
         """
         初始化 QueryEngine 运行环境
@@ -154,9 +173,7 @@ class QueryEngine:
         self.model = model
         self.max_turns = max_turns
 
-        # 扩展思考配置
-# todo 对不支持的思考的模型未做处理
-        self.thinking_config = thinking_config  # None 表示禁用，字典表示启用并携带预算
+        self.thinking_config = thinking_config
 
         # 客户端
         if client is not None:
@@ -164,14 +181,22 @@ class QueryEngine:
         else:
             if not api_key:
                 raise ValueError("api_key is required when client is not provided")
-            client_kwargs = {"api_key": api_key}
+            # 流式场景下 read timeout 是 chunk 间隔上限，不是整体时长：
+            # 正常长回复只要持续有字流出就不会被切断，但上游网关完全 hang
+            # （一个字都不回）时 60s 就会抛 ReadTimeout，避免默认 600s 卡死。
+            import httpx
+
+            client_kwargs = {
+                "api_key": api_key,
+                "timeout": httpx.Timeout(60.0, connect=10.0),
+            }
             if base_url:
                 client_kwargs["base_url"] = base_url
             self.client = AsyncAnthropic(**client_kwargs)
 
         # 会话状态
         self.session_id = session_id or str(uuid4())
-        self.messages: List[Dict[str, Any]] = initial_messages or []
+        self.messages: list[dict[str, Any]] = initial_messages or []
         self.enable_persistence = enable_persistence
 
         # 轮次计数（从 1 开始，而非 0）
@@ -181,9 +206,9 @@ class QueryEngine:
         # 用户中断控制器
 
         self.abort_controller = AbortController()
-        self._runtime_controller: Optional[QueryRuntimeController] = None
-        self._runtime_pump_task: Optional[asyncio.Task[Any]] = None
-        self._runtime_command_task: Optional[asyncio.Task[Any]] = None
+        self._runtime_controller: QueryRuntimeController | None = None
+        self._runtime_pump_task: asyncio.Task[Any] | None = None
+        self._runtime_command_task: asyncio.Task[Any] | None = None
         self._archived_checkpoints: dict[str, RuntimeCheckpoint] = {}
 
         # 执行上下文（用于工具编排）
@@ -226,7 +251,7 @@ class QueryEngine:
         self.builtin_tools = get_all_tools()
 
         # MCP 工具（动态加载）
-        self.mcp_tools: List[Any] = []
+        self.mcp_tools: list[Any] = []
 
         # 合并工具池（内置工具 + MCP 工具）
         self.tools = self.builtin_tools + self.mcp_tools
@@ -234,7 +259,7 @@ class QueryEngine:
         # 同步 execution_context 中的工具列表
         self.execution_context["options"]["tools"] = self.tools # tool实例对象
 
-        # API 工具模式定义（将在 submit_message 中异步生成）
+        # API 工具模式定义（将在 submit_message_stream 中异步生成）
         self.tool_schemas = None
 
         # 提示词构建器（用于生成系统提示词）
@@ -334,19 +359,19 @@ class QueryEngine:
                     runtime_state = {}
                 self._restore_runtime_state(runtime_state)
                 if self.verbose:
-                    print(f"[会话恢复] 已加载 {len(loaded_messages)} 条消息")
+                    logger.info("[session restore] loaded %s messages", len(loaded_messages))
                 return True
             else:
                 if self.verbose:
-                    print("[会话恢复] 未找到历史消息，开始新会话")
+                    logger.info("[session restore] no history found; starting new session")
                 return False
 
         except Exception as e:
             if self.verbose:
-                print(f"[会话恢复] 恢复失败: {e}")
+                logger.warning("[session restore] failed: %s", e)
             return False
 #这个函数就是从持久化的 runtime_state 里捞出需要的字段，塞回引擎的 execution_context，让引擎"接着上次的状态继续"。
-    def _restore_runtime_state(self, runtime_state: Dict[str, Any]) -> None:
+    def _restore_runtime_state(self, runtime_state: dict[str, Any]) -> None:
         """
         从持久化的 runtime_state 恢复运行时状态到 execution_context。
 
@@ -399,15 +424,15 @@ class QueryEngine:
                 permission_context = self.execution_context.get("permission_context")
                 if permission_context is not None:
                     permission_context.mode = PermissionMode(str(permission_mode))
-            except Exception:
-                pass  # 权限模式恢复失败时静默跳过，使用默认值
-            
+            except ValueError:
+                logger.warning("invalid restored permission mode: %s", permission_mode)
+
 #这个函数是处理一条用户消息的入口。用户每发一条消息，UI 就调它。
     async def submit_message_stream(
         self,
         prompt: str,
-        checkpoint_id: Optional[str] = None,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+        checkpoint_id: str | None = None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         提交消息并产出流式事件（用于 StreamManager）
 
@@ -470,7 +495,13 @@ class QueryEngine:
             agents = load_all_agents(self.cwd)
             self.tool_schemas = await tools_to_api_schemas(self.tools, agents)
 
-        # 构建系统提示词
+        # 构建系统提示词return [
+        #     {
+        #         "type": "text",
+        #         "text": full_text,
+        #         "cache_control": {"type": "ephemeral"},
+        #     }
+        # ]
         system_prompt_blocks = self.prompt_builder.build_system_prompt(
             language_preference="zh-CN",
         )
@@ -481,20 +512,18 @@ class QueryEngine:
         self.execution_context["options"]["system_prompt"] = system_prompt
         self.execution_context["options"]["model"] = self.model
 
-        # 调试输出（用于观察提示词和上下文规模）
         if self.verbose:
-            token_count = estimate_messages_tokens(normalize_messages_for_api(self.messages))
-            print(f"[DEBUG] Model: {self.model}")
-            print(f"[DEBUG] System prompt length: {len(system_prompt)}")
-            print(f"[DEBUG] Messages count: {len(self.messages)}")
-            print(f"[DEBUG] Tools count: {len(self.tool_schemas)}")
-            print(f"[DEBUG] Estimated tokens: {token_count}")
+            logger.debug(
+                "query prepared: model=%s system_prompt_length=%s messages=%s tools=%s",
+                self.model,
+                len(system_prompt),
+                len(self.messages),
+                len(self.tool_schemas),
+            )
 
         # ====================================================================
         # 调用新的 query() 主循环
         # ====================================================================
-        from codo.query import QueryParams, Terminal
-
         runtime_controller = QueryRuntimeController()
         self._runtime_controller = runtime_controller
         runtime_execution_context = dict(self.execution_context)
@@ -532,7 +561,19 @@ class QueryEngine:
             """
             try:
                 async for event in query(query_params):
-                    await runtime_controller.emit(event)
+                    if isinstance(event, Terminal):
+                        await runtime_controller.emit_terminal(event)
+                    elif isinstance(event, RuntimeEvent):
+                        await runtime_controller.emit(event)
+                    elif isinstance(event, dict):
+                        event_type = str(event.get("type", "event"))
+                        payload = {key: value for key, value in event.items() if key != "type"}
+                        await runtime_controller.emit_runtime_event(event_type, **payload)
+                    else:
+                        await runtime_controller.emit_runtime_event(
+                            "event",
+                            value=str(event),
+                        )
             except asyncio.CancelledError:
                 await runtime_controller.emit(
                     RuntimeEvent(
@@ -586,7 +627,9 @@ class QueryEngine:
                         self._runtime_pump_task.cancel()
                 elif command.type == "resolve_interaction":
                     request_id = str(command.payload.get("request_id", "") or "")
-                    runtime_controller.resolve_interaction(request_id, command.payload.get("data"))
+                    raw_data = command.payload.get("data")
+                    data = _normalize_interaction_data(raw_data)
+                    runtime_controller.resolve_interaction(request_id, data)
                 elif command.type == "cancel_interaction":
                     request_id = str(command.payload.get("request_id", "") or "")
                     runtime_controller.cancel_interaction(request_id)
@@ -623,6 +666,13 @@ class QueryEngine:
 
                 if isinstance(event, RuntimeEvent):
                     legacy_event = event.as_legacy_event()
+                    if (
+                        legacy_event.get("type") == "error"
+                        and legacy_event.get("error_type") == "max_turns_reached"
+                    ):
+                        event_turn_count = legacy_event.get("turn_count")
+                        if isinstance(event_turn_count, int) and event_turn_count > 0:
+                            self.turn_count = event_turn_count - 1
                     if self.session_storage:
                         self.session_storage.record_runtime_event(legacy_event)
                     yield legacy_event
@@ -711,6 +761,17 @@ class QueryEngine:
                 # 错误已在 query() 中产出
                 pass
 
+    def _build_system_prompt(self) -> str:
+        """
+        兼容旧版测试和旧调用方的系统提示词入口。
+
+        工作流：
+        1. 新代码统一走 PromptBuilder。
+        2. 旧调用方仍然可能调用 QueryEngine._build_system_prompt()。
+        3. 这里只做薄转发，不重新实现一套提示词拼装逻辑。
+        """
+        return self.prompt_builder.build_system_prompt_text(language_preference="zh-CN")
+
     async def compact(
         self,
         custom_instructions: str = None,
@@ -730,7 +791,7 @@ class QueryEngine:
         返回:
             CompactResult: 压缩结果对象
         """
-        system_prompt = self.prompt_builder.build_system_prompt(
+        system_prompt = self.prompt_builder.build_system_prompt_text(
             language_preference="zh-CN",
         )
 
@@ -763,7 +824,7 @@ class QueryEngine:
         self.auto_compact_state.record_success()
         return result
 
-    def get_token_usage(self) -> Dict[str, Any]:
+    def get_token_usage(self) -> dict[str, Any]:
         """
         获取当前 token 使用统计
 
@@ -777,7 +838,7 @@ class QueryEngine:
         """
         return self.get_context_stats()
 
-    def get_context_stats(self) -> Dict[str, Any]:
+    def get_context_stats(self) -> dict[str, Any]:
         """
         获取上下文统计（统一口径）。
 
@@ -838,7 +899,7 @@ class QueryEngine:
         )
         return usage
 
-    def _get_transcript_path(self) -> Optional[str]:
+    def _get_transcript_path(self) -> str | None:
         """
         获取会话记录文件路径
 
@@ -851,7 +912,7 @@ class QueryEngine:
             return str(self.session_storage.session_file)
         return None
 
-    def interrupt(self):
+    def interrupt(self) -> None:
         """
         触发用户中断（Ctrl+C）
 
@@ -862,7 +923,7 @@ class QueryEngine:
         """
         self.send_control(RuntimeCommand(type="interrupt"))
 
-    def send_control(self, command: RuntimeCommand | Dict[str, Any]) -> None:
+    def send_control(self, command: RuntimeCommand | dict[str, Any]) -> None:
         """
         发送运行时控制命令到当前活动会话。
 
@@ -902,7 +963,9 @@ class QueryEngine:
             request_id = str(command.payload.get("request_id", "") or "")
             controller = self._runtime_controller
             if controller is not None:
-                controller.resolve_interaction(request_id, command.payload.get("data"))
+                raw_data = command.payload.get("data")
+                data = _normalize_interaction_data(raw_data)
+                controller.resolve_interaction(request_id, data)
         elif command.type == "cancel_interaction":
             request_id = str(command.payload.get("request_id", "") or "")
             controller = self._runtime_controller
@@ -917,7 +980,7 @@ class QueryEngine:
         elif command.type == "switch_sidebar_focus":
             return
 
-    def resolve_interaction(self, request_id: str, data: Any) -> None:
+    def resolve_interaction(self, request_id: str, data: str | None) -> None:
         """
         完成当前运行时交互请求（如权限确认、用户输入）。
 
@@ -937,7 +1000,7 @@ class QueryEngine:
             )
         )
 
-    def retry_checkpoint(self, checkpoint_id: str) -> Optional[RuntimeCheckpoint]:
+    def retry_checkpoint(self, checkpoint_id: str) -> RuntimeCheckpoint | None:
         """
         恢复到指定 checkpoint 对应的运行时快照，并重新触发执行。
 
@@ -955,7 +1018,7 @@ class QueryEngine:
             # 示例：
             # RuntimeCheckpoint(
             #     checkpoint_id="ckpt_a1b2c3d4",
-            #     phase="execute_tools",
+            #     phase="collect_tool_results",
             #     turn_count=3,
             #     metadata={"messages_state": [...], "message_count": 6}
             # )
@@ -972,7 +1035,7 @@ class QueryEngine:
         )
         return checkpoint
 
-    def reset_interrupt_state(self):
+    def reset_interrupt_state(self) -> None:
         """
         重置中断状态，允许下一次新查询继续执行。
 
@@ -986,7 +1049,7 @@ class QueryEngine:
         self.abort_controller = AbortController()
         self.execution_context["abort_controller"] = self.abort_controller
 
-    def _lookup_checkpoint(self, checkpoint_id: str) -> Optional[RuntimeCheckpoint]:
+    def _lookup_checkpoint(self, checkpoint_id: str) -> RuntimeCheckpoint | None:
         """
         按 ID 查找检查点，优先从当前活动控制器查，其次从归档中查。
 
@@ -1022,7 +1085,7 @@ class QueryEngine:
         self.turn_count = max(1, int(checkpoint.turn_count))
         self.reset_interrupt_state()
 
-    def _apply_checkpoint_restore(self, checkpoint_id: str) -> Optional[RuntimeCheckpoint]:
+    def _apply_checkpoint_restore(self, checkpoint_id: str) -> RuntimeCheckpoint | None:
         """
         查找并应用检查点恢复（组合操作）。
 
@@ -1065,30 +1128,7 @@ class QueryEngine:
         """
         logger.debug("[memory] _run_memory_extraction is deprecated, use query.py instead")
 
-    async def submit_message(
-        self,
-        prompt: str,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        提交消息并流式返回结果（兼容旧接口）。
-
-        [Workflow]
-        1. 记录废弃告警
-        2. 直接代理到 submit_message_stream()
-        3. 逐条透传事件给调用方
-
-        注意：此方法已废弃，请使用 submit_message_stream()。
-
-        产出事件格式：
-        - {"type": "assistant", "content": [...]}
-        - {"type": "tool_result", "tool_use_id": "...", "content": "..."}
-        - {"type": "error", "error": "..."}
-        """
-        logger.warning("submit_message() is deprecated, use submit_message_stream() instead")
-        async for event in self.submit_message_stream(prompt):
-            yield event
-
-    async def _execute_tool(self, tool_use: Dict[str, Any]) -> str:
+    async def _execute_tool(self, tool_use: dict[str, Any]) -> str:
         """
         执行工具并返回结果（兼容占位实现）。
 

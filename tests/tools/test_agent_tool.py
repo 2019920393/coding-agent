@@ -9,41 +9,42 @@ AgentTool 测试
 - agent_tool: 核心执行逻辑（mock API）
 """
 
-import pytest
 import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from codo.tools.agent_tool.types import AgentToolInput, AgentToolOutput
-from codo.tools.agent_tool.agents import (
-    AgentDefinition,
-    EXPLORE_AGENT,
-    PLAN_AGENT,
-    BUILTIN_AGENTS,
-    get_builtin_agents,
-    find_agent_by_type,
-)
-from codo.tools.agent_tool.utils import (
-    filter_tools_for_agent,
-    extract_final_text,
-    ALL_AGENT_DISALLOWED_TOOLS,
-)
-from codo.tools.agent_tool.prompt import (
-    AGENT_TOOL_NAME,
-    LEGACY_AGENT_TOOL_NAME,
-    MAX_AGENT_TURNS,
-    get_agent_tool_prompt,
-)
+import pytest
+
+from codo.constants import DEFAULT_MODEL
+from codo.services.tools.permission_checker import create_default_permission_context
 from codo.tools import receipts as tool_receipts
 from codo.tools.agent_tool.agent_tool import (
     AgentTool,
-    agent_tool,
-    _run_sub_agent,
     _execute_agent_tool,
+    _run_sub_agent,
     _tool_to_schema,
+    agent_tool,
+)
+from codo.tools.agent_tool.agents import (
+    BUILTIN_AGENTS,
+    EXPLORE_AGENT,
+    PLAN_AGENT,
+    AgentDefinition,
+    find_agent_by_type,
+    get_builtin_agents,
+)
+from codo.tools.agent_tool.prompt import (
+    AGENT_TOOL_NAME,
+    MAX_AGENT_TURNS,
+    get_agent_tool_prompt,
+)
+from codo.tools.agent_tool.types import AgentToolInput, AgentToolOutput
+from codo.tools.agent_tool.utils import (
+    ALL_AGENT_DISALLOWED_TOOLS,
+    extract_final_text,
+    filter_tools_for_agent,
 )
 from codo.tools.receipts import AuditLogEvent, CommandReceipt
 from codo.tools.types import ToolResult
-from codo.services.tools.permission_checker import create_default_permission_context
 from codo.types.permissions import PermissionAskDecision
 
 # ============================================================================
@@ -276,7 +277,6 @@ class TestExtractFinalText:
 class TestPrompt:
     def test_constants(self):
         assert AGENT_TOOL_NAME == "Agent"
-        assert LEGACY_AGENT_TOOL_NAME == "Task"
         assert MAX_AGENT_TURNS > 0
 
     def test_get_agent_tool_prompt_default(self):
@@ -938,7 +938,7 @@ class TestAgentToolCall:
         context.options = {
             "api_client": mock_client,
             "tools": [],
-            "model": "claude-opus-4-20250514",
+            "model": DEFAULT_MODEL,
             "cwd": "/tmp",
         }
 
@@ -1056,7 +1056,7 @@ class TestAgentToolCall:
 
     @pytest.mark.asyncio
     async def test_agent_tool_returns_structured_agent_receipt(self):
-        """AgentTool 应返回结构化 AgentReceipt，供 TUI 渲染子卡片。"""
+        """AgentTool 应返回结构化 AgentReceipt，供 Desktop 渲染子卡片。"""
         tool = AgentTool()
         args = AgentToolInput(
             description="Search config files",

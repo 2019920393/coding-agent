@@ -1,0 +1,186 @@
+{
+  "module": "memory.extract",
+  "cases": [
+    {
+      "id": "lang-pref-pos-01",
+      "description": "用户明确说喜欢 Python，应当写入 preference",
+      "messages": [
+        {"role": "user", "content": "我平时主要写 Python，写起来最舒服"},
+        {"role": "assistant", "content": "好的，记住了，你偏好 Python"}
+      ],
+      "expect_write": true
+    },
+    {
+      "id": "lang-pref-pos-02",
+      "description": "用户说不喜欢 Java，应当写入 preference",
+      "messages": [
+        {"role": "user", "content": "别给我用 Java，看着头疼"},
+        {"role": "assistant", "content": "明白，避开 Java"}
+      ],
+      "expect_write": true
+    },
+    {
+      "id": "style-pref-pos-01",
+      "description": "代码风格偏好（不要过度防御）",
+      "messages": [
+        {"role": "user", "content": "你写代码的时候不要总加一堆 if 防御性判断，太啰嗦"},
+        {"role": "assistant", "content": "收到，简洁优先"}
+      ],
+      "expect_write": true
+    },
+    {
+      "id": "tone-pref-pos-01",
+      "description": "沟通语气偏好",
+      "messages": [
+        {"role": "user", "content": "回复我的时候直接说结论，别绕弯子"},
+        {"role": "assistant", "content": "好，直接给结论"}
+      ],
+      "expect_write": true
+    },
+    {
+      "id": "feedback-pos-01",
+      "description": "用户纠正模式（之前做错了不要再这么做）",
+      "messages": [
+        {"role": "user", "content": "上次你直接 git push 到 main 我后来不得不 revert，以后必须先开分支"},
+        {"role": "assistant", "content": "记下了，main 直推违规"}
+      ],
+      "expect_write": true
+    },
+    {
+      "id": "feedback-pos-02",
+      "description": "调试方式偏好（先看日志而不是猜）",
+      "messages": [
+        {"role": "user", "content": "排错的时候你先看日志再下结论，别凭猜测改代码"},
+        {"role": "assistant", "content": "好的，调试先读日志"}
+      ],
+      "expect_write": true
+    },
+    {
+      "id": "project-fact-pos-01",
+      "description": "项目部署/构建事实",
+      "messages": [
+        {"role": "user", "content": "记一下：这个项目的入口是 codo/main.py，启动命令是 python -m codo"},
+        {"role": "assistant", "content": "记住，入口和启动命令保存"}
+      ],
+      "expect_write": true
+    },
+    {
+      "id": "project-fact-pos-02",
+      "description": "测试约定",
+      "messages": [
+        {"role": "user", "content": "我们的测试都放在 tests/，跑测试用 pytest -q，不要改这个习惯"},
+        {"role": "assistant", "content": "好的，pytest -q 是统一入口"}
+      ],
+      "expect_write": true
+    },
+    {
+      "id": "task-context-pos-01",
+      "description": "跨会话长期任务",
+      "messages": [
+        {"role": "user", "content": "我这周的目标是把 memory 模块迁到用户级目录，分几次做，你以后每次帮我接着做"},
+        {"role": "assistant", "content": "记下了，本周持续推进 memory 用户级迁移"}
+      ],
+      "expect_write": true
+    },
+    {
+      "id": "explicit-remember-pos-01",
+      "description": "用户显式让记住",
+      "messages": [
+        {"role": "user", "content": "请记住我使用 Windows 11 + PowerShell，不要假定 bash"},
+        {"role": "assistant", "content": "好，已记住操作系统和 shell"}
+      ],
+      "expect_write": true
+    },
+
+    {
+      "id": "smalltalk-neg-01",
+      "description": "纯闲聊，不该记",
+      "messages": [
+        {"role": "user", "content": "今天天气不错"},
+        {"role": "assistant", "content": "嗯，希望你心情也好"}
+      ],
+      "expect_write": false
+    },
+    {
+      "id": "ephemeral-neg-01",
+      "description": "一次性的临时调试请求",
+      "messages": [
+        {"role": "user", "content": "帮我看看为什么这个函数返回 None"},
+        {"role": "assistant", "content": "可能是分支没覆盖，看 line 23"}
+      ],
+      "expect_write": false
+    },
+    {
+      "id": "explanation-neg-01",
+      "description": "求解释，不带任何偏好或事实",
+      "messages": [
+        {"role": "user", "content": "asyncio.gather 和 asyncio.wait 有什么区别"},
+        {"role": "assistant", "content": "gather 等所有完成，wait 可以指定第一个完成就返回"}
+      ],
+      "expect_write": false
+    },
+    {
+      "id": "instruction-neg-01",
+      "description": "本轮一次性指令，不是跨会话约定",
+      "messages": [
+        {"role": "user", "content": "把这段代码翻译成 TypeScript"},
+        {"role": "assistant", "content": "好的，翻译完了"}
+      ],
+      "expect_write": false
+    },
+    {
+      "id": "negation-of-pref-neg-01",
+      "description": "否定偏好（用户说他不再偏好某个东西，但没给新偏好）",
+      "messages": [
+        {"role": "user", "content": "我之前可能说过我喜欢 vim，现在无所谓了，用什么都行"},
+        {"role": "assistant", "content": "好，没有强约束"}
+      ],
+      "expect_write": false
+    },
+    {
+      "id": "code-question-neg-01",
+      "description": "代码问题，不含可记忆的偏好或事实",
+      "messages": [
+        {"role": "user", "content": "为什么我这个 grep 命令在 PowerShell 里不工作"},
+        {"role": "assistant", "content": "PowerShell 不带 grep，用 Select-String 或 ripgrep"}
+      ],
+      "expect_write": false
+    },
+    {
+      "id": "thanks-neg-01",
+      "description": "致谢/确认",
+      "messages": [
+        {"role": "user", "content": "好的谢谢"},
+        {"role": "assistant", "content": "不客气"}
+      ],
+      "expect_write": false
+    },
+    {
+      "id": "secret-neg-01",
+      "description": "用户提到 API key 等敏感信息，不应保存",
+      "messages": [
+        {"role": "user", "content": "我的 OPENAI_API_KEY=sk-abc123def，先用这个测试"},
+        {"role": "assistant", "content": "已收到，本轮使用"}
+      ],
+      "expect_write": false
+    },
+    {
+      "id": "redundant-neg-01",
+      "description": "信息已经在 codebase（README/config）里能查到，不必重复记",
+      "messages": [
+        {"role": "user", "content": "顺便说，你看 README 就知道项目用 setuptools 构建"},
+        {"role": "assistant", "content": "好的，需要时看 README"}
+      ],
+      "expect_write": false
+    },
+    {
+      "id": "transient-debug-neg-01",
+      "description": "一次性 debug 上下文，没有沉淀价值",
+      "messages": [
+        {"role": "user", "content": "我这台机器今天 npm 网络很慢，你跑命令时多给点超时"},
+        {"role": "assistant", "content": "好，本次任务里我会注意"}
+      ],
+      "expect_write": false
+    }
+  ]
+}

@@ -8,30 +8,38 @@ GlobTool - 文件名模式匹配工具
 4. 返回结果（限制 100 个文件）
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, Callable, List, Any
 import os
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from ..base import Tool, ToolUseContext
-from ..types import ToolResult, ValidationResult, ToolCallProgress
+from pydantic import BaseModel, Field
+
+from codo.constants import GLOB_MAX_FILES, GLOB_MAX_RESULT_CHARS
+
 from ...utils.path import expandPath, toRelativePath
+from ..base import Tool
+from ..types import ToolResult, ValidationResult
+
 
 class GlobToolInput(BaseModel):
+    """Glob 工具输入模型，描述匹配模式和可选搜索目录。"""
     pattern: str = Field(description="要匹配文件的 glob 模式")
-    path: Optional[str] = Field(default=None, description="要搜索的目录。如果未指定，将使用当前工作目录")
+    path: str | None = Field(default=None, description="要搜索的目录。如果未指定，将使用当前工作目录")
 
 class GlobToolOutput(BaseModel):
+    """Glob 工具输出模型，返回匹配文件、数量、耗时和截断状态。"""
     durationMs: int
     numFiles: int
-    filenames: List[str]
+    filenames: list[str]
     truncated: bool
 
 class GlobTool(Tool[GlobToolInput, GlobToolOutput, None]):
+    """文件名模式匹配工具，用于按 glob 规则查找工作区文件。"""
     def __init__(self):
         """初始化 GlobTool，设置工具名称和最大结果大小。"""
         self.name = "Glob"
-        self.max_result_size_chars = 100000
+        self.max_result_size_chars = GLOB_MAX_RESULT_CHARS
 
     @property
     def input_schema(self) -> type[GlobToolInput]:
@@ -76,7 +84,7 @@ class GlobTool(Tool[GlobToolInput, GlobToolOutput, None]):
         """文件搜索是只读操作，返回 True。"""
         return True
 
-    async def validate_input(self, input_data: GlobToolInput, context: ToolUseContext) -> ValidationResult:
+    async def validate_input(self, input_data: GlobToolInput, context: dict[str, Any]) -> ValidationResult:
         """验证 glob 模式不能为空。"""
         if not input_data.pattern:
             return ValidationResult(result=False, message='模式不能为空')
@@ -85,10 +93,10 @@ class GlobTool(Tool[GlobToolInput, GlobToolOutput, None]):
     async def call(
         self,
         input_data: GlobToolInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool: Callable,
         parent_message: Any,
-        on_progress: Optional[Callable] = None
+        on_progress: Callable | None = None
     ) -> ToolResult[GlobToolOutput]:
         """
         执行 glob 文件搜索。
@@ -107,18 +115,24 @@ class GlobTool(Tool[GlobToolInput, GlobToolOutput, None]):
         start_time = time.time()
 
         try:
-            # 确定搜索路径
-            search_path = expandPath(input_data.path) if input_data.path else os.getcwd()
+            # 确定搜索路径。
+            # 工作流：
+            workspace_cwd = str(context.get("cwd") or os.getcwd())
+            search_path = (
+                expandPath(input_data.path, cwd=workspace_cwd)
+                if input_data.path
+                else workspace_cwd
+            )
 
             # 使用 pathlib 进行 glob 搜索
             base = Path(search_path)
-            matches = list(base.glob(input_data.pattern))
+            matches = [path for path in base.glob(input_data.pattern) if not path.is_symlink()]
 
             # 按修改时间排序（最新的在前）
             matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
 
             # 限制结果数量
-            max_files = 100
+            max_files = GLOB_MAX_FILES
             truncated = len(matches) > max_files
             matches = matches[:max_files]
 

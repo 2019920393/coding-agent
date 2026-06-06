@@ -12,30 +12,27 @@
 
 import json
 import os
-import tempfile
-from typing import Any, Dict, List
+from typing import Any
 
-import pytest
-
-from codo.session.title import (
-    extract_conversation_text,
-    MAX_CONVERSATION_TEXT,
-)
 from codo.session.export import (
+    export_session,
+    export_session_to_string,
     extract_first_prompt,
-    sanitize_filename,
     generate_default_filename,
     messages_to_markdown,
     messages_to_plain_text,
-    export_session_to_string,
-    export_session,
+    sanitize_filename,
+)
+from codo.session.title import (
+    MAX_CONVERSATION_TEXT,
+    extract_conversation_text,
 )
 
 # ============================================================================
 # 测试数据
 # ============================================================================
 
-SAMPLE_MESSAGES: List[Dict[str, Any]] = [
+SAMPLE_MESSAGES: list[dict[str, Any]] = [
     {
         "role": "user",
         "content": "帮我修复登录按钮的 bug",
@@ -53,7 +50,7 @@ SAMPLE_MESSAGES: List[Dict[str, Any]] = [
     },
 ]
 
-CONTENT_BLOCK_MESSAGES: List[Dict[str, Any]] = [
+CONTENT_BLOCK_MESSAGES: list[dict[str, Any]] = [
     {
         "role": "user",
         "content": [
@@ -337,7 +334,7 @@ class TestExportSession:
     def test_导出到md文件(self, tmp_path):
         """应成功导出到 md 文件"""
         output_path = str(tmp_path / "test.md")
-        result = export_session(SAMPLE_MESSAGES, output_path, format="md")
+        export_session(SAMPLE_MESSAGES, output_path, format="md")
         assert os.path.exists(output_path)
         content = open(output_path, encoding="utf-8").read()
         assert "## 用户" in content
@@ -345,7 +342,7 @@ class TestExportSession:
     def test_导出到json文件(self, tmp_path):
         """应成功导出到 json 文件"""
         output_path = str(tmp_path / "test.json")
-        result = export_session(SAMPLE_MESSAGES, output_path, format="json")
+        export_session(SAMPLE_MESSAGES, output_path, format="json")
         assert os.path.exists(output_path)
         data = json.loads(open(output_path, encoding="utf-8").read())
         assert "messages" in data

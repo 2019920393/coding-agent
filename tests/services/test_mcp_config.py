@@ -3,10 +3,13 @@ MCP 配置管理测试
 """
 
 import json
-import pytest
 from pathlib import Path
-from codo.services.mcp.config import MCPConfigManager, MCPServerConfig, MCPConfig
+
+import pytest
+
+from codo.services.mcp.config import MCPConfig, MCPConfigManager, MCPServerConfig
 from codo.services.mcp.types import MCPTransportType
+
 
 @pytest.fixture
 def temp_config_dir(tmp_path):
@@ -188,7 +191,7 @@ def test_config_merge_priority(tmp_path):
     # 保存原有配置（如果存在）
     original_user_config = None
     if user_config_file.exists():
-        with open(user_config_file, "r") as f:
+        with open(user_config_file) as f:
             original_user_config = f.read()
 
     try:

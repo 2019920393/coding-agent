@@ -4,24 +4,40 @@ LSP 类型定义
 基于 lsprotocol 的类型定义和自定义类型
 """
 
-from typing import Optional, List, Union, Dict, Any, Literal
-from dataclasses import dataclass
-from pydantic import BaseModel, Field
+from dataclasses import dataclass, field
+from typing import Any
+
+from lsprotocol.types import (
+    CallHierarchyIncomingCall as LSPProtocolCallHierarchyIncomingCall,
+)
+from lsprotocol.types import (
+    CallHierarchyItem as LSPProtocolCallHierarchyItem,
+)
+from lsprotocol.types import (
+    CallHierarchyOutgoingCall as LSPProtocolCallHierarchyOutgoingCall,
+)
+from lsprotocol.types import (
+    DocumentSymbol as LSPProtocolDocumentSymbol,
+)
+from lsprotocol.types import (
+    Hover as LSPProtocolHover,
+)
+from lsprotocol.types import (
+    Location as LSPProtocolLocation,
+)
+from lsprotocol.types import (
+    LocationLink as LSPProtocolLocationLink,
+)
 from lsprotocol.types import (
     Position as LSPProtocolPosition,
-    Location as LSPProtocolLocation,
-    LocationLink as LSPProtocolLocationLink,
-    SymbolInformation as LSPProtocolSymbolInformation,
-    DocumentSymbol as LSPProtocolDocumentSymbol,
-    Hover as LSPProtocolHover,
-    CallHierarchyItem as LSPProtocolCallHierarchyItem,
-    CallHierarchyIncomingCall as LSPProtocolCallHierarchyIncomingCall,
-    CallHierarchyOutgoingCall as LSPProtocolCallHierarchyOutgoingCall,
-    Range as LSPProtocolRange,
-    TextDocumentIdentifier,
-    TextDocumentItem,
-    VersionedTextDocumentIdentifier,
 )
+from lsprotocol.types import (
+    Range as LSPProtocolRange,
+)
+from lsprotocol.types import (
+    SymbolInformation as LSPProtocolSymbolInformation,
+)
+from pydantic import BaseModel
 
 # 重新导出 lsprotocol 类型
 LSPPosition = LSPProtocolPosition
@@ -45,22 +61,22 @@ class LSPServerConfig:
     command: str
     """启动命令"""
 
-    args: List[str]
+    args: list[str]
     """命令参数"""
 
-    file_extensions: List[str]
+    file_extensions: list[str]
     """支持的文件扩展名（如 ['.py', '.pyi']）"""
 
-    language_ids: List[str]
+    language_ids: list[str]
     """支持的语言 ID（如 ['python']）"""
 
-    env: Optional[Dict[str, str]] = None
+    env: dict[str, str] | None = None
     """环境变量"""
 
-    initialization_options: Optional[Dict[str, Any]] = None
+    initialization_options: dict[str, Any] | None = None
     """初始化选项"""
 
-    workspace_folders: Optional[List[str]] = None
+    workspace_folders: list[str] | None = None
     """工作区文件夹"""
 
     disabled: bool = False
@@ -73,21 +89,17 @@ class LSPServerInfo:
     config: LSPServerConfig
     """服务器配置"""
 
-    process: Optional[Any] = None
+    process: Any | None = None
     """服务器进程"""
 
     initialized: bool = False
     """是否已初始化"""
 
-    capabilities: Optional[Dict[str, Any]] = None
+    capabilities: dict[str, Any] | None = None
     """服务器能力"""
 
-    opened_files: Dict[str, int] = None
+    opened_files: dict[str, int] = field(default_factory=dict)
     """已打开的文件（文件路径 -> 版本号）"""
-
-    def __post_init__(self):
-        if self.opened_files is None:
-            self.opened_files = {}
 
 class LSPOperationType(str):
     """LSP 操作类型"""
@@ -121,50 +133,36 @@ class LSPRequest(BaseModel):
     method: str
     """LSP 方法名"""
 
-    params: Dict[str, Any]
+    params: dict[str, Any]
     """请求参数"""
 
 class LSPResponse(BaseModel):
     """LSP 响应"""
 
-    result: Optional[Any] = None
+    result: Any | None = None
     """响应结果"""
 
-    error: Optional[Dict[str, Any]] = None
+    error: dict[str, Any] | None = None
     """错误信息"""
 
 # LSP 结果类型
-LSPDefinitionResult = Union[
-    LSPLocation,
-    List[LSPLocation],
-    List[LSPLocationLink],
-    None
-]
+LSPDefinitionResult = LSPLocation | list[LSPLocation] | list[LSPLocationLink] | None
 
-LSPReferencesResult = Optional[List[LSPLocation]]
+LSPReferencesResult = list[LSPLocation] | None
 
-LSPHoverResult = Optional[LSPHover]
+LSPHoverResult = LSPHover | None
 
-LSPDocumentSymbolResult = Union[
-    List[LSPDocumentSymbol],
-    List[LSPSymbolInformation],
-    None
-]
+LSPDocumentSymbolResult = list[LSPDocumentSymbol] | list[LSPSymbolInformation] | None
 
-LSPWorkspaceSymbolResult = Optional[List[LSPSymbolInformation]]
+LSPWorkspaceSymbolResult = list[LSPSymbolInformation] | None
 
-LSPImplementationResult = Union[
-    LSPLocation,
-    List[LSPLocation],
-    List[LSPLocationLink],
-    None
-]
+LSPImplementationResult = LSPLocation | list[LSPLocation] | list[LSPLocationLink] | None
 
-LSPCallHierarchyPrepareResult = Optional[List[LSPCallHierarchyItem]]
+LSPCallHierarchyPrepareResult = list[LSPCallHierarchyItem] | None
 
-LSPCallHierarchyIncomingCallsResult = Optional[List[LSPCallHierarchyIncomingCall]]
+LSPCallHierarchyIncomingCallsResult = list[LSPCallHierarchyIncomingCall] | None
 
-LSPCallHierarchyOutgoingCallsResult = Optional[List[LSPCallHierarchyOutgoingCall]]
+LSPCallHierarchyOutgoingCallsResult = list[LSPCallHierarchyOutgoingCall] | None
 
 @dataclass
 class FormattedLocation:
@@ -179,13 +177,13 @@ class FormattedLocation:
     character: int
     """字符位置（1-based）"""
 
-    end_line: Optional[int] = None
+    end_line: int | None = None
     """结束行号（1-based）"""
 
-    end_character: Optional[int] = None
+    end_character: int | None = None
     """结束字符位置（1-based）"""
 
-    context: Optional[str] = None
+    context: str | None = None
     """上下文信息"""
 
 @dataclass
@@ -201,10 +199,10 @@ class FormattedSymbol:
     location: FormattedLocation
     """位置信息"""
 
-    container_name: Optional[str] = None
+    container_name: str | None = None
     """容器名称"""
 
-    detail: Optional[str] = None
+    detail: str | None = None
     """详细信息"""
 
 @dataclass
@@ -214,11 +212,11 @@ class FormattedHover:
     contents: str
     """内容"""
 
-    range: Optional[FormattedLocation] = None
+    range: FormattedLocation | None = None
     """范围"""
 
 # 默认 LSP 服务器配置
-DEFAULT_LSP_SERVERS: List[LSPServerConfig] = [
+DEFAULT_LSP_SERVERS: list[LSPServerConfig] = [
     LSPServerConfig(
         name="python",
         command="pylsp",

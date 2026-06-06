@@ -6,31 +6,41 @@ This module extends the base AgentTool with:
 - Context isolation and inheritance
 """
 
-from typing import Optional, Dict, Any
 import logging
+from typing import Any
 
-from codo.tools.agent_tool.types import AgentToolInput
-from codo.tools.agent_tool.agents import find_agent_by_type
 from codo.team import (
-    prepare_fresh_context,
-    prepare_fork_context,
-    should_use_fork_mode,
-    get_task_manager,
     TaskStatus,
+    get_task_manager,
+    prepare_fork_context,
+    prepare_fresh_context,
+    should_use_fork_mode,
 )
+from codo.tools.agent_tool.agents import find_agent_by_type
+from codo.tools.agent_tool.types import AgentToolInput
 
 logger = logging.getLogger(__name__)
 
 async def _emit_agent_event(runtime_controller: Any, event_type: str, **payload: Any) -> None:
+    """
+    向运行时控制器发射代理事件（如 agent_started、agent_completed）。
+
+    若 runtime_controller 为 None 或不支持 emit_runtime_event，则静默跳过。
+
+    参数:
+        runtime_controller: 运行时控制器实例
+        event_type: 事件类型，如 "agent_started"、"agent_delta"
+        **payload: 事件附加数据
+    """
     if runtime_controller is None or not hasattr(runtime_controller, "emit_runtime_event"):
         return
     await runtime_controller.emit_runtime_event(event_type, **payload)
 
 async def run_subagent_with_mode(
     args: AgentToolInput,
-    context: Dict[str, Any],
+    context: dict[str, Any],
     run_in_background: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Run a sub-agent with fresh/fork mode selection.
 
@@ -99,8 +109,8 @@ async def run_subagent_with_mode(
 async def _run_foreground_subagent(
     args: AgentToolInput,
     subagent_ctx,
-    parent_context: Dict[str, Any],
-) -> Dict[str, Any]:
+    parent_context: dict[str, Any],
+) -> dict[str, Any]:
     """
     Run sub-agent in foreground (blocking).
 
@@ -144,7 +154,8 @@ async def _run_foreground_subagent(
             status="running",
         )
 
-        async def _event_callback(event_type: str, payload: Dict[str, Any]) -> None:
+        async def _event_callback(event_type: str, payload: dict[str, Any]) -> None:
+            """前台子代理事件回调：将子代理事件转发到运行时控制器。"""
             await _emit_agent_event(
                 runtime_controller,
                 event_type,
@@ -201,8 +212,8 @@ async def _run_foreground_subagent(
 async def _run_background_subagent(
     args: AgentToolInput,
     subagent_ctx,
-    parent_context: Dict[str, Any],
-) -> Dict[str, Any]:
+    parent_context: dict[str, Any],
+) -> dict[str, Any]:
     """
     Run sub-agent in background (non-blocking).
 
@@ -250,7 +261,14 @@ async def _run_background_subagent(
     cwd = parent_context.get("cwd", ".")
 
     async def execute():
-        async def _event_callback(event_type: str, payload: Dict[str, Any]) -> None:
+        """后台子代理执行协程：运行子代理对话循环并更新任务状态。"""
+        async def _event_callback(event_type: str, payload: dict[str, Any]) -> None:
+            """
+            后台子代理事件回调：更新任务当前动作并转发事件到运行时控制器。
+
+            对 agent_delta、agent_tool_started、agent_tool_completed 事件提取
+            current_action 文本，用于 TaskManager 的进度展示。
+            """
             current_action = ""
             if event_type == "agent_delta":
                 current_action = (
@@ -328,7 +346,7 @@ async def _run_background_subagent(
         "is_background": True,
     }
 
-async def get_background_task_status(task_id: str) -> Optional[Dict[str, Any]]:
+async def get_background_task_status(task_id: str) -> dict[str, Any] | None:
     """
     Get status of a background task.
 

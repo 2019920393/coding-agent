@@ -2,15 +2,15 @@
 测试工具辅助模块
 """
 
-import pytest
 import os
-import tempfile
-from pathlib import Path
 
+import pytest
+
+from codo.utils.diff import countLinesChanged, detectLineEnding, generateUnifiedDiff
+from codo.utils.file_read import detectEncoding, readFileSyncWithMetadata
 from codo.utils.fs_operations import getFsImplementation
-from codo.utils.path import expandPath, toRelativePath, isUncPath, isSubPath
-from codo.utils.diff import generateUnifiedDiff, countLinesChanged, detectLineEnding
-from codo.utils.file_read import readFileSyncWithMetadata, detectEncoding
+from codo.utils.path import expandPath, isSubPath, isUncPath, toRelativePath
+
 
 class TestFsOperations:
     """测试文件系统操作"""

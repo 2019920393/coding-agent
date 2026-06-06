@@ -4,12 +4,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+from codo.tools.base import ToolUseContext
 from codo.tools.skill_tool import (
-    SkillTool,
     SkillInput,
     SkillOutputInline,
+    SkillTool,
 )
-from codo.tools.base import ToolUseContext
+
 
 @pytest.fixture
 def tool():

@@ -13,11 +13,8 @@ Memory 相关性查找模块
 import logging
 import re
 from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Optional, Set
 
-from codo.services.memory.scan import scan_memory_files, MemoryHeader
-from codo.services.memory.paths import ENTRYPOINT_NAME
+from codo.services.memory.scan import MemoryHeader, scan_memory_files
 
 # 模块级日志记录器，用于调试和错误追踪
 logger = logging.getLogger(__name__)
@@ -26,7 +23,7 @@ logger = logging.getLogger(__name__)
 MAX_RELEVANT_MEMORIES = 5
 
 # 停用词集合：常见英文功能词，对相关性判断无实质贡献，过滤后可提升匹配精度
-_STOP_WORDS: Set[str] = {
+_STOP_WORDS: set[str] = {
     # 冠词、系动词、助动词
     'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
     'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
@@ -59,7 +56,7 @@ class RelevantMemory:
     path: str        # 文件绝对路径（用于后续读取内容）
     mtime_ms: float
 
-def _extract_keywords(text: str) -> Set[str]:
+def _extract_keywords(text: str) -> set[str]:
     """
     从文本中提取有效关键词集合
 
@@ -86,7 +83,7 @@ def _extract_keywords(text: str) -> Set[str]:
     # 过滤停用词，保留具有区分度的内容词
     return {w for w in words if w not in _STOP_WORDS}
 
-def _score_memory(header: MemoryHeader, query_keywords: Set[str]) -> float:
+def _score_memory(header: MemoryHeader, query_keywords: set[str]) -> float:
     """
     计算单个记忆文件与查询的关键词相关性分数
 
@@ -137,9 +134,9 @@ def _score_memory(header: MemoryHeader, query_keywords: Set[str]) -> float:
 def find_relevant_memories(
     query: str,
     memory_dir: str,
-    already_surfaced: Optional[Set[str]] = None,
+    already_surfaced: set[str] | None = None,
     max_results: int = MAX_RELEVANT_MEMORIES,
-) -> List[RelevantMemory]:
+) -> list[RelevantMemory]:
     """
     查找与用户查询相关的记忆文件列表
 
@@ -196,7 +193,7 @@ def find_relevant_memories(
         ]
 
     # 步骤 4：对每个候选文件计算关键词相关性分数
-    scored: List[tuple] = []  # 元素为 (score, header) 的元组列表
+    scored: list[tuple] = []  # 元素为 (score, header) 的元组列表
     for header in headers:
         score = _score_memory(header, query_keywords)
         if score > 0:

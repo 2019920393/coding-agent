@@ -11,21 +11,19 @@ hooks_loader.py 单元测试
 
 import json
 import os
-import tempfile
 import shutil
-from pathlib import Path
+import tempfile
 
 import pytest
 
 from codo.services.tools.hooks_loader import (
+    SUPPORTED_HOOK_EVENTS,
     _get_settings_file_path,
     _load_settings_json,
     _parse_hook_matcher,
-    load_hooks_from_settings,
     get_hooks_for_event,
-    SUPPORTED_HOOK_EVENTS,
+    load_hooks_from_settings,
 )
-from codo.types.hooks import HookConfig
 
 # ============================================================================
 # Fixture

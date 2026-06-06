@@ -1,16 +1,38 @@
 """
 消息规范化
 
-将消息历史规范化为 ?? API 格式。
+将消息历史规范化为模型 API 格式。
 
 参考：src/utils/messages.ts - normalizeMessagesForAPI()
 简化：移除复杂的附件重排序、媒体块剥离、工具引用块处理
 保留：基本的消息过滤、格式转换、工具调用/结果配对
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Any
 
-def _render_attachment_for_model(attachment: Dict[str, Any]) -> Optional[str]:
+
+def _render_attachment_for_model(attachment: dict[str, Any]) -> str | None:
+    """
+    将附件字典渲染为模型可读的文本字符串。
+
+    [Workflow]
+    1. 提取 attachment_type 字段
+    2. 按类型分发到对应渲染逻辑：
+       - queued_command: 斜杠命令展开的 prompt
+       - ide_selection: IDE 选中代码片段
+       - opened_file_in_ide: IDE 当前打开文件
+       - plan_mode_reminder: 计划模式提醒
+       - memory: 相关记忆内容
+       - 其他: 通用 system-reminder 格式
+    3. 返回格式化文本，无法渲染时返回 None
+
+    参数:
+        attachment: 附件字典，包含 type 和类型相关字段
+
+    返回:
+        str | None: 渲染后的文本，如：
+            "<system-reminder>Slash command /code-review expanded...</system-reminder>\n..."
+    """
     attachment_type = str(attachment.get("type", "") or "")
     if not attachment_type:
         return None
@@ -85,7 +107,22 @@ def _render_attachment_for_model(attachment: Dict[str, Any]) -> Optional[str]:
         return None
     return f"<system-reminder>Attachment {attachment_type}: {payload}</system-reminder>"
 
-def _normalize_attachment_message(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _normalize_attachment_message(message: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    将 type=attachment 的消息规范化为标准 user 消息格式。
+
+    [Workflow]
+    1. 提取 attachment 字段（必须是字典）
+    2. 调用 _render_attachment_for_model 渲染为文本
+    3. 返回 {"role": "user", "content": 渲染文本}，渲染失败时返回 None
+
+    参数:
+        message: 包含 attachment 字段的消息字典
+
+    返回:
+        Dict | None: 规范化后的 user 消息，如：
+            {"role": "user", "content": "<system-reminder>...</system-reminder>"}
+    """
     attachment = message.get("attachment")
     if not isinstance(attachment, dict):
         return None
@@ -98,10 +135,10 @@ def _normalize_attachment_message(message: Dict[str, Any]) -> Optional[Dict[str,
     }
 
 def normalize_messages_for_api(
-    messages: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
-    规范化消息历史为 ?? API 格式
+    规范化消息历史为 anthropic API 格式
 
     [Workflow]
     1. 过滤虚拟消息（内部使用的消息）
@@ -113,7 +150,7 @@ def normalize_messages_for_api(
         messages: 原始消息列表
 
     Returns:
-        规范化后的消息列表（?? API 格式）
+        规范化后的消息列表（anthropic API 格式）
     """
     if not messages:
         return []
@@ -170,8 +207,8 @@ def normalize_messages_for_api(
     return ensure_alternating_messages(normalized)
 
 def ensure_alternating_messages(
-    messages: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
     确保消息交替（user/assistant）
 
@@ -230,7 +267,7 @@ def ensure_alternating_messages(
 
     return result
 
-def _merge_content(content_list: List[Any]) -> Any:
+def _merge_content(content_list: list[Any]) -> Any:
     """
     合并内容列表
 
@@ -265,7 +302,7 @@ def _merge_content(content_list: List[Any]) -> Any:
                 result.append(c)
         return result
 
-def create_user_message(content: str) -> Dict[str, Any]:
+def create_user_message(content: str) -> dict[str, Any]:
     """
     创建用户消息
 
@@ -283,7 +320,7 @@ def create_user_message(content: str) -> Dict[str, Any]:
         "content": content,
     }
 
-def create_assistant_message(content: Any) -> Dict[str, Any]:
+def create_assistant_message(content: Any) -> dict[str, Any]:
     """
     创建助手消息
 
@@ -302,9 +339,9 @@ def create_assistant_message(content: Any) -> Dict[str, Any]:
     }
 
 def add_cache_breakpoints(
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     enable_caching: bool = True,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     为消息添加缓存断点
 

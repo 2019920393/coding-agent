@@ -1,9 +1,10 @@
 """Tests for team collaboration system."""
 
-import pytest
-import asyncio
 
-from codo.team import Message, MessageType, Mailbox, TeamManager
+import pytest
+
+from codo.team import Mailbox, Message, MessageType, TeamManager
+
 
 class TestMessageTypes:
     """Test message type definitions."""

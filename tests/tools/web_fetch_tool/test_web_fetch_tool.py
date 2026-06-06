@@ -1,18 +1,21 @@
 """WebFetchTool 单元测试"""
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from codo.tools.base import ToolUseContext
 from codo.tools.web_fetch_tool import (
-    WebFetchTool,
     WebFetchInput,
     WebFetchOutput,
+    WebFetchTool,
 )
-from codo.tools.base import ToolUseContext
 from codo.types.permissions import (
     PermissionAllowDecision,
     PermissionResult,
     create_allow_decision,
     create_passthrough_result,
 )
+
 
 @pytest.fixture
 def tool():

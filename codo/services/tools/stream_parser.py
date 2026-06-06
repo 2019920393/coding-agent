@@ -5,8 +5,9 @@
 
 import json
 import logging
-from typing import Dict, Any, Optional, List, AsyncGenerator
+from collections.abc import AsyncGenerator
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class StreamParser:
     """
     流式 API 响应解析器
 
-    解析 ?? API 的流式响应，提取：
+    解析模型 API 的流式响应，提取：
     - 文本内容
     - tool_use 块
     - 消息元数据
@@ -32,12 +33,12 @@ class StreamParser:
 
     def __init__(self):
         """初始化解析器"""
-        self.message_id: Optional[str] = None
-        self.model: Optional[str] = None
+        self.message_id: str | None = None
+        self.model: str | None = None
         self.role: str = "assistant"
 
         # 内容块
-        self.content_blocks: List[Dict[str, Any]] = []
+        self.content_blocks: list[dict[str, Any]] = []
         self.current_block_index: int = -1
 
         # 累积的文本
@@ -48,17 +49,17 @@ class StreamParser:
         self.output_tokens: int = 0
 
         # 停止原因
-        self.stop_reason: Optional[str] = None
+        self.stop_reason: str | None = None
 
     async def parse_stream(
         self,
         stream: AsyncGenerator[Any, None]
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         解析流式响应
 
         Args:
-            stream: ?? API 流式响应
+            stream: 模型 API 流式响应
 
         Yields:
             解析后的事件
@@ -76,7 +77,7 @@ class StreamParser:
                 "error": str(e),
             }
 
-    async def _parse_chunk(self, chunk: Any) -> Optional[Dict[str, Any]]:
+    async def _parse_chunk(self, chunk: Any) -> dict[str, Any] | None:
         """
         解析单个流式块
 
@@ -109,7 +110,7 @@ class StreamParser:
 
         return None
 
-    async def _handle_message_start(self, chunk: Any) -> Dict[str, Any]:
+    async def _handle_message_start(self, chunk: Any) -> dict[str, Any]:
         """处理消息开始事件"""
         message = chunk.message
         self.message_id = message.id
@@ -125,7 +126,7 @@ class StreamParser:
             "model": self.model,
         }
 
-    async def _handle_content_block_start(self, chunk: Any) -> Dict[str, Any]:
+    async def _handle_content_block_start(self, chunk: Any) -> dict[str, Any]:
         """处理内容块开始事件"""
         self.current_block_index = chunk.index
         block = chunk.content_block
@@ -154,7 +155,7 @@ class StreamParser:
             "content_block": content_block,
         }
 
-    async def _handle_content_block_delta(self, chunk: Any) -> Dict[str, Any]:
+    async def _handle_content_block_delta(self, chunk: Any) -> dict[str, Any]:
         """处理内容块增量事件"""
         delta = chunk.delta
         index = chunk.index
@@ -195,7 +196,7 @@ class StreamParser:
 
         return None
 
-    async def _handle_content_block_stop(self, chunk: Any) -> Dict[str, Any]:
+    async def _handle_content_block_stop(self, chunk: Any) -> dict[str, Any]:
         """处理内容块停止事件"""
         index = chunk.index
 
@@ -219,7 +220,7 @@ class StreamParser:
             "content_block": block,
         }
 
-    async def _handle_message_delta(self, chunk: Any) -> Dict[str, Any]:
+    async def _handle_message_delta(self, chunk: Any) -> dict[str, Any]:
         """处理消息增量事件"""
         delta = chunk.delta
 
@@ -234,7 +235,7 @@ class StreamParser:
             "stop_reason": self.stop_reason,
         }
 
-    async def _handle_message_stop(self, chunk: Any) -> Dict[str, Any]:
+    async def _handle_message_stop(self, chunk: Any) -> dict[str, Any]:
         """处理消息停止事件"""
         return {
             "type": StreamEventType.MESSAGE_STOP,
@@ -242,7 +243,7 @@ class StreamParser:
             "stop_reason": self.stop_reason,
         }
 
-    def get_assistant_message(self) -> Dict[str, Any]:
+    def get_assistant_message(self) -> dict[str, Any]:
         """
         获取完整的 assistant 消息
 
@@ -254,7 +255,7 @@ class StreamParser:
             "content": self.content_blocks,
         }
 
-    def get_tool_uses(self) -> List[Dict[str, Any]]:
+    def get_tool_uses(self) -> list[dict[str, Any]]:
         """
         获取所有 tool_use 块
 
@@ -275,7 +276,7 @@ class StreamParser:
         """
         return self.accumulated_text
 
-    def get_usage(self) -> Dict[str, int]:
+    def get_usage(self) -> dict[str, int]:
         """
         获取 token 使用统计
 

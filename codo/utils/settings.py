@@ -11,22 +11,20 @@
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 # 从 config 模块导入底层配置读写函数和数据类
 from codo.utils.config import (
     get_global_config,
-    save_global_config,
-    get_project_config,
-    save_project_config,
     get_merged_config,
-    GlobalConfig,
+    save_global_config,
+    save_project_config,
 )
 
 # 模块级日志记录器
 logger = logging.getLogger(__name__)
 
-def get_settings(cwd: str = "") -> Dict[str, Any]:
+def get_settings(cwd: str = "") -> dict[str, Any]:
     """
     获取合并后的设置
 

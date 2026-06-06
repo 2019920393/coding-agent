@@ -4,6 +4,7 @@
 
 from codo.query_engine import QueryEngine
 
+
 def _build_tool_result_message(tool_use_id: str, payload: str) -> dict:
     """构造最小可识别的 tool_result 消息。"""
     return {

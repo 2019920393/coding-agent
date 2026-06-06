@@ -11,11 +11,11 @@
 5. readImageFile(): 读取图片文件（返回 base64）
 """
 
-import os
 import base64
-from typing import Optional, Tuple
+import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
+
 
 @dataclass
 class FileReadResult:
@@ -144,8 +144,8 @@ def readFileSyncWithMetadata(filepath: str) -> FileReadResult:
 def readFileWithOffset(
     filepath: str,
     offset: int = 0,
-    limit: Optional[int] = None
-) -> Tuple[str, int]:
+    limit: int | None = None
+) -> tuple[str, int]:
     """
     读取文件的指定范围（按行）
 
@@ -178,7 +178,7 @@ def readFileWithOffset(
 
     return content, total_lines
 
-def readPdfFile(filepath: str, pages: Optional[str] = None) -> str:
+def readPdfFile(filepath: str, pages: str | None = None) -> str:
     """
     读取 PDF 文件内容
 
@@ -195,8 +195,8 @@ def readPdfFile(filepath: str, pages: Optional[str] = None) -> str:
     """
     try:
         from pypdf import PdfReader
-    except ImportError:
-        raise ImportError('读取 PDF 需要安装 pypdf: pip install pypdf')
+    except ImportError as e:
+        raise ImportError('读取 PDF 需要安装 pypdf: pip install pypdf') from e
 
     reader = PdfReader(filepath)
     total_pages = len(reader.pages)
@@ -251,10 +251,10 @@ def readNotebookFile(filepath: str) -> str:
     """
     try:
         import nbformat
-    except ImportError:
-        raise ImportError('读取 Notebook 需要安装 nbformat: pip install nbformat')
+    except ImportError as e:
+        raise ImportError('读取 Notebook 需要安装 nbformat: pip install nbformat') from e
 
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         nb = nbformat.read(f, as_version=4)
 
     parts = []
@@ -316,8 +316,8 @@ def _parsePageRange(pages: str, total_pages: int) -> range:
         try:
             start = int(parts[0]) - 1  # 转换为 0-based
             end = int(parts[1])
-        except ValueError:
-            raise ValueError(f'无效的页码范围: {pages}')
+        except ValueError as e:
+            raise ValueError(f'无效的页码范围: {pages}') from e
 
         if start < 0 or end > total_pages or start >= end:
             raise ValueError(f'页码范围超出范围: {pages} (总页数: {total_pages})')
@@ -327,8 +327,8 @@ def _parsePageRange(pages: str, total_pages: int) -> range:
         # 单页格式：3
         try:
             page_num = int(pages) - 1  # 转换为 0-based
-        except ValueError:
-            raise ValueError(f'无效的页码: {pages}')
+        except ValueError as e:
+            raise ValueError(f'无效的页码: {pages}') from e
 
         if page_num < 0 or page_num >= total_pages:
             raise ValueError(f'页码超出范围: {pages} (总页数: {total_pages})')

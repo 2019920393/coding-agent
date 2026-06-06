@@ -13,21 +13,18 @@ Hook 系统核心功能：
 
 import asyncio
 import json
-import subprocess
-from typing import List, Optional, Dict, Any, AsyncGenerator
-from pathlib import Path
+from typing import Any
 
 from codo.types.hooks import (
+    AggregatedHookResult,
     HookConfig,
+    HookEventName,
     HookInput,
     HookResult,
-    AggregatedHookResult,
-    PreToolUseHookInput,
-    PostToolUseHookInput,
     PostToolUseFailureHookInput,
-    HookEventName,
+    PostToolUseHookInput,
+    PreToolUseHookInput,
 )
-from codo.types.permissions import PermissionBehavior
 
 # ============================================================================
 # Hook 执行（Hook Execution）
@@ -142,7 +139,7 @@ async def execute_hook(
             error_message=f"Hook 执行错误: {str(e)}",
         )
 
-def parse_hook_output(output_json: Dict[str, Any], event_name: HookEventName) -> HookResult:
+def parse_hook_output(output_json: dict[str, Any], event_name: HookEventName) -> HookResult:
     """
     解析 Hook JSON 输出
 
@@ -214,7 +211,7 @@ def parse_hook_output(output_json: Dict[str, Any], event_name: HookEventName) ->
 # Hook 结果聚合（Hook Result Aggregation）
 # ============================================================================
 
-def aggregate_hook_results(results: List[HookResult]) -> AggregatedHookResult:
+def aggregate_hook_results(results: list[HookResult]) -> AggregatedHookResult:
     """
     聚合多个 Hook 结果
 
@@ -301,10 +298,10 @@ def aggregate_hook_results(results: List[HookResult]) -> AggregatedHookResult:
 
 async def run_pre_tool_use_hooks(
     tool_name: str,
-    tool_input: Dict[str, Any],
+    tool_input: dict[str, Any],
     tool_use_id: str,
     cwd: str,
-    hooks: List[HookConfig],
+    hooks: list[HookConfig],
 ) -> AggregatedHookResult:
     """
     执行 PreToolUse Hook
@@ -344,11 +341,11 @@ async def run_pre_tool_use_hooks(
 
 async def run_post_tool_use_hooks(
     tool_name: str,
-    tool_input: Dict[str, Any],
+    tool_input: dict[str, Any],
     tool_response: Any,
     tool_use_id: str,
     cwd: str,
-    hooks: List[HookConfig],
+    hooks: list[HookConfig],
 ) -> AggregatedHookResult:
     """
     执行 PostToolUse Hook
@@ -388,12 +385,12 @@ async def run_post_tool_use_hooks(
 
 async def run_post_tool_use_failure_hooks(
     tool_name: str,
-    tool_input: Dict[str, Any],
+    tool_input: dict[str, Any],
     tool_use_id: str,
     error: str,
     is_interrupt: bool,
     cwd: str,
-    hooks: List[HookConfig],
+    hooks: list[HookConfig],
 ) -> AggregatedHookResult:
     """
     执行 PostToolUseFailure Hook

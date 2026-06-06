@@ -16,81 +16,176 @@ Query 主循环
 
 import asyncio
 import inspect
-import json
 import logging
-from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import AsyncGenerator, Dict, Any, List, Optional
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass, field
+from typing import (
+    Any,
+    Protocol,
+    cast,
+)
 from uuid import uuid4
 
 from anthropic import AsyncAnthropic
 
-from codo.services.tools.streaming_executor import StreamingToolExecutor
+from codo.constants import (
+    MAX_TOKENS,
+    MAX_TURNS_RECOVERY_LIMIT,
+    THINKING_BUDGET_TOKENS,
+    THINKING_MARGIN_TOKENS,
+)
+from codo.runtime_protocol import RuntimeCheckpoint
+from codo.services.api.errors import (
+    APIErrorCategory,
+    classify_api_error,
+    format_api_error,
+    is_retryable,
+)
+from codo.services.attachments import get_attachment_messages
 from codo.services.compact import (
     AutoCompactState,
     auto_compact_if_needed,
 )
+from codo.services.compact.microcompact import microcompact_if_needed
 from codo.services.memory.extract import (
-    extract_memories,
     MemoryExtractionState,
-)
-from codo.services.api.errors import (
-    classify_api_error,
-    format_api_error,
-    is_retryable,
-    APIErrorCategory,
+    extract_memories,
 )
 from codo.services.prompt.messages import normalize_messages_for_api
 from codo.services.token_estimation import estimate_messages_tokens
-from codo.services.attachments import get_attachment_messages
-from codo.services.compact.microcompact import microcompact_if_needed
+from codo.services.tools.streaming_executor import StreamingToolExecutor
+from codo.session.storage import SessionStorage
 from codo.tools.receipts import receipt_to_dict
-from codo.runtime_protocol import RuntimeCheckpoint
+from codo.types.runtime import ThinkingConfig
+from codo.utils.serialize import serialize_ui_metadata
 
 logger = logging.getLogger(__name__)
 _UNSET = object()
 
-#这个函数的作用是将复杂的 Python 对象转换为简单的字典列表，以便传递给 UI 层显示。
-def _serialize_ui_metadata(items: List[Any]) -> List[Dict[str, Any]]:
+
+class AnthropicContentBlock(Protocol):
+    """Anthropic SDK 返回的 content block 最小结构。"""
+
+    type: str
+
+
+class AnthropicFinalMessage(Protocol):
+    """Anthropic SDK stream.get_final_message() 的最小结构。"""
+
+    content: Sequence[AnthropicContentBlock]
+    stop_reason: str | None
+
+
+class AnthropicMessageStream(Protocol):
+    """Anthropic SDK messages.stream() 进入 async context 后的最小结构。"""
+
+    def __aiter__(self) -> AsyncIterator[Any]:
+        """返回 SDK 流式事件迭代器。"""
+        ...
+
+    async def get_final_message(self) -> AnthropicFinalMessage:
+        """返回 SDK 聚合后的最终消息。"""
+        ...
+
+def _normalize_pending_interaction(value: Any) -> dict[str, Any] | None:
+    """将 pending_interaction 统一规范化为 dict 或 None。"""
+    if value is None or isinstance(value, dict):
+        return value
+    serialized = serialize_ui_metadata(value)
+    return serialized if isinstance(serialized, dict) else None
+
+
+async def _open_anthropic_stream(
+    client: AsyncAnthropic,
+    api_kwargs: dict[str, Any],
+) -> AbstractAsyncContextManager[AnthropicMessageStream]:
     """
-    将复杂 Python 对象列表序列化为可 JSON 化的字典列表，供 UI 层展示。
+    打开 Anthropic 消息流。
 
-    [Workflow]
-    1. 遍历 items 列表
-    2. 对 dataclass 对象使用 asdict() 转换
-    3. 对普通字典直接保留
-    4. 对有 __dict__ 属性的对象使用 vars() 转换
-    5. 其他类型跳过
-
-    参数:
-        items: 待序列化的对象列表，可能包含 dataclass、dict、普通对象
-
-    返回:
-        # 示例（输入为 ToolReceipt dataclass 列表）：
-        [
-            {"tool_name": "Bash", "command": "ls -la", "exit_code": 0},
-            {"tool_name": "Read", "file_path": "/tmp/test.py", "lines_read": 42},
-        ]
+    工作流：
+    1. 真实 SDK 返回 async context manager，直接交给调用方 `async with`。
+    2. 某些边界包装或测试替身会返回 awaitable，这里先 await 一次。
+    3. 这个函数只处理 IO 边界，不把 dict block 混进 query 主循环。
     """
-    serialized: List[Dict[str, Any]] = []
-    for item in items or []:
-        if is_dataclass(item):
-            # dataclass 使用 asdict() 递归转换为字典
-            serialized.append(asdict(item))
-        elif isinstance(item, dict):
-            # 普通字典直接保留
-            serialized.append(item)
-        elif hasattr(item, "__dict__"):
-            # 普通对象通过 vars() 获取实例属性字典
-            serialized.append(dict(vars(item)))
-    return serialized
+    stream_context = client.messages.stream(**api_kwargs)
+    if inspect.isawaitable(stream_context):
+        stream_context = await stream_context
+    return cast(AbstractAsyncContextManager[AnthropicMessageStream], stream_context)
+
+
+def _get_sdk_block_type(block: AnthropicContentBlock) -> str:
+    """
+    读取 SDK content block 类型。
+
+    工作流：
+    1. 核心主循环只接受 SDK-like block 对象。
+    2. 缺少字符串 type 代表边界输入不合法，直接抛出明确错误。
+    """
+    block_type = getattr(block, "type", None)
+    if not isinstance(block_type, str) or not block_type:
+        raise TypeError("Anthropic content block 缺少字符串 type。")
+    return block_type
+
+
+def _get_sdk_block_text(block: AnthropicContentBlock) -> str:
+    """读取 text block 的正文。"""
+    text = getattr(block, "text", "")
+    return text if isinstance(text, str) else str(text or "")
+
+
+def _get_sdk_block_thinking(block: AnthropicContentBlock) -> str:
+    """读取 thinking block 的内容。"""
+    thinking = getattr(block, "thinking", "")
+    return thinking if isinstance(thinking, str) else str(thinking or "")
+
+
+def _get_sdk_tool_id(block: AnthropicContentBlock) -> str:
+    """读取 tool_use block 的 id。"""
+    tool_id = getattr(block, "id", None)
+    if not isinstance(tool_id, str) or not tool_id:
+        raise TypeError("Anthropic tool_use block 缺少字符串 id。")
+    return tool_id
+
+
+def _get_sdk_tool_name(block: AnthropicContentBlock) -> str:
+    """读取 tool_use block 的工具名。"""
+    tool_name = getattr(block, "name", None)
+    if isinstance(tool_name, str):
+        return tool_name
+
+    # unittest.mock.Mock(name="Read") 会把名称存在 _mock_name。
+    mock_name = getattr(block, "_mock_name", None)
+    if isinstance(mock_name, str) and mock_name:
+        return mock_name
+
+    raise TypeError("Anthropic tool_use block 缺少字符串 name。")
+
+
+def _get_sdk_tool_input(block: AnthropicContentBlock) -> dict[str, Any]:
+    """读取 tool_use block 的输入参数。"""
+    tool_input = getattr(block, "input", None)
+    if isinstance(tool_input, dict):
+        return tool_input
+    if tool_input is None:
+        return {}
+    raise TypeError("Anthropic tool_use block input 必须是 dict。")
+
+
+def _get_sdk_stop_reason(final_message: AnthropicFinalMessage) -> str | None:
+    """读取最终消息的 stop_reason，测试替身缺失时视为 None。"""
+    stop_reason = getattr(final_message, "stop_reason", None)
+    return stop_reason if isinstance(stop_reason, str) else None
+
+
 #这个函数用于记录运行时检查点（Checkpoint），在对话执行的不同阶段保存状态快照，用于调试、恢复和分析。
 def _record_runtime_checkpoint(
     runtime_controller: Any,
     *,
     phase: str,
     turn_count: int,
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Optional[str]:
+    metadata: dict[str, Any] | None = None,
+) -> str | None:
     """
     记录运行时检查点，在对话执行的不同阶段保存状态快照。
 
@@ -195,7 +290,7 @@ class QueryState:
     # 消息历史：对话的完整消息列表
     # 格式：[{"role": "user", "content": "...", "uuid": "msg_001"}, ...]
     # 作用：每轮循环都要发送给 API，需要追加新消息，compact 时会替换
-    messages: List[Dict[str, Any]]
+    messages: list[dict[str, Any]]
 
     # 轮次计数（从 1 开始）
     # 作用：记录当前是第几轮对话，用于 checkpoint、判断 max_turns、日志输出
@@ -207,7 +302,7 @@ class QueryState:
     # 作用：跟踪压缩历史，实现 circuit breaker（连续失败 3 次停止尝试）
     # 包含：compacted（是否已压缩）、turn_counter（轮次计数）、consecutive_failures（连续失败次数）
     # 使用：compact_result = await auto_compact_if_needed(tracking=state.auto_compact_tracking)
-    auto_compact_tracking: Optional[AutoCompactState] = None
+    auto_compact_tracking: AutoCompactState | None = None
 
     # 响应式压缩标志：是否已尝试过响应式压缩
     # 作用：API 返回 prompt_too_long 错误时触发响应式压缩，只允许尝试一次，避免无限重试
@@ -222,13 +317,13 @@ class QueryState:
     # 输出 token 覆盖值
     # 作用：临时覆盖默认的 max_output_tokens 参数（正常 16384，错误后降低到 8000）
     # 使用：api_kwargs["max_tokens"] = state.max_output_tokens_override or 16384
-    max_output_tokens_override: Optional[int] = None
+    max_output_tokens_override: int | None = None
 
     # ========== 执行状态 ==========
 
     # 当前执行阶段
     # 作用：记录当前执行到哪个阶段，用于 checkpoint、调试、UI 显示
-    # 可能值："prepare_turn", "stream_assistant", "execute_tools", "collect_tool_calls",
+    # 可能值："prepare_turn", "stream_assistant", "execute_tools", "dispatch_tools",
     #         "compact", "stop_hooks", "complete", "error"
     # 使用：await phase_tracker.transition("execute_tools", ...)
     phase: str = "prepare_turn"
@@ -237,49 +332,49 @@ class QueryState:
     # 作用：追踪哪些工具正在执行，用于 UI 显示、sibling abort（Bash 错误时取消其他工具）
     # 格式：["tool_001", "tool_002"]
     # 使用：state.active_tool_ids = [tool.id for tool in executor.tools]
-    active_tool_ids: List[str] = field(default_factory=list)
+    active_tool_ids: list[str] = field(default_factory=list)
 
     # 当前等待中的交互请求
     # 作用：记录当前正在等待用户响应的交互（如权限确认），用于 checkpoint、UI 显示
     # 格式：{"type": "permission", "tool": "Bash", "command": "rm -rf /tmp", "request_id": "perm_001"}
     # 使用：result = await runtime_controller.request_interaction(request)
-    pending_interaction: Optional[Dict[str, Any]] = None
+    pending_interaction: dict[str, Any] | None = None
 
     # 最近一次 checkpoint 的 ID
     # 作用：关联当前状态和 checkpoint，用于调试和恢复
     # 格式："ckpt_a1b2c3d4"
     # 使用：checkpoint_id = _record_runtime_checkpoint(...); state.checkpoint_id = checkpoint_id
-    checkpoint_id: Optional[str] = None
+    checkpoint_id: str | None = None
 
     # ========== UI 和调试 ==========
 
     # 待发送给用户的工具调用摘要
     # 作用：UI 展示"AI 正在做什么"，在合适时机发送给用户
-    pending_tool_use_summary: Optional[Any] = None
+    pending_tool_use_summary: Any | None = None
 
     # 停止钩子是否激活
     # 作用：记录是否正在执行停止钩子，避免重复执行
-    stop_hook_active: Optional[bool] = None
+    stop_hook_active: bool | None = None
 
     # 上一次状态迁移的原因
     # 作用：用于测试和调试，追踪状态变化原因
     # 格式：{"reason": "max_output_tokens_recovery"} 或 {"reason": "reactive_compact_retry"}
-    transition: Optional[Dict[str, Any]] = None
+    transition: dict[str, Any] | None = None
 
     # ========== 高级功能 ==========
 
     # 当前活动的 Agent ID
     # 作用：支持嵌套 Agent（Agent 调用 Agent），追踪 Agent 执行状态
-    active_agent_id: Optional[str] = None
+    active_agent_id: str | None = None
 
     # 中断原因
     # 作用：记录为什么被中断，用于日志和调试
     # 格式："user_cancel" 或 "timeout"
-    interrupt_reason: Optional[str] = None
+    interrupt_reason: str | None = None
 
     # 重试恢复目标
     # 作用：支持从特定阶段恢复执行，用于错误恢复
-    resume_target: Optional[str] = None
+    resume_target: str | None = None
 
 # ============================================================================
 # Query 参数定义
@@ -356,7 +451,7 @@ class QueryParams:
 
     # 模型名称
     # 作用：指定使用哪个模型
-    # 可能值："claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-haiku-4-20250514"
+    # 可能值："claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"
     # 使用：api_kwargs = {"model": params.model, ...}
     model: str
 
@@ -374,7 +469,7 @@ class QueryParams:
     # 格式：[{"role": "user", "content": "...", "uuid": "msg_001"}, ...]
     # 注意：这是初始值，在循环中会被 QueryState.messages 替代
     # 使用：state = QueryState(messages=params.messages, ...)
-    messages: List[Dict[str, Any]]
+    messages: list[dict[str, Any]]
 
     # ========== 工具配置 ==========
 
@@ -383,14 +478,14 @@ class QueryParams:
     # 类型：List[Tool] - Tool 是工具基类
     # 获取：tools = get_all_tools() + fetch_all_mcp_tools()
     # 使用：executor = StreamingToolExecutor(tools=params.tools, ...)
-    tools: List[Any]
+    tools: list[Any]
 
     # 工具模式定义（API 格式）
     # 作用：工具的 JSON Schema 定义，发送给 API 让模型知道有哪些工具可用
     # 格式：[{"name": "Read", "description": "...", "input_schema": {...}}, ...]
     # 构建：tool_schemas = tools_to_api_schemas(tools)
     # 使用：api_kwargs = {"tools": params.tool_schemas, ...}
-    tool_schemas: List[Dict[str, Any]] = field(default_factory=list)
+    tool_schemas: list[dict[str, Any]] = field(default_factory=list)
 
     # ========== 执行环境 ==========
 
@@ -404,7 +499,7 @@ class QueryParams:
     #   - session_id: str - 会话 ID
     #   - permissions: dict - 权限配置
     # 使用：runtime_controller = execution_context.get("runtime_controller")
-    execution_context: Dict[str, Any] = field(default_factory=dict)
+    execution_context: dict[str, Any] = field(default_factory=dict)
 
     # 当前工作目录
     # 作用：工具执行的工作目录（Bash, Read, Write 等工具会用到）
@@ -425,7 +520,7 @@ class QueryParams:
     # 作用：限制对话的最大轮次，防止无限循环
     # 默认：None（无限制）
     # 使用：if params.max_turns and turn_count > params.max_turns: 终止对话
-    max_turns: Optional[int] = None
+    max_turns: int | None = None
 
     # ========== 持久化配置 ==========
 
@@ -440,14 +535,14 @@ class QueryParams:
     # 类型：SessionStorage 实例
     # 创建：session_storage = SessionStorage(cwd=cwd, session_id=session_id)
     # 使用：session_storage.record_messages([message])
-    session_storage: Optional[Any] = None
+    session_storage: SessionStorage | None = None
 
     # 记忆提取状态
     # 作用：跟踪 Memory 提取的游标位置和并发保护状态
     # 类型：MemoryExtractionState 实例
     # 包含：last_message_uuid（上次处理的消息 UUID）、in_progress（是否正在提取）
     # 使用：await extract_memories(messages=messages, state=params.memory_extraction_state)
-    memory_extraction_state: Optional[MemoryExtractionState] = None
+    memory_extraction_state: MemoryExtractionState | None = None
 
     # ========== 调试配置 ==========
 
@@ -465,7 +560,7 @@ class QueryParams:
     # 使用：
     #   if params.thinking_config and params.thinking_config.get("type") == "enabled":
     #       api_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
-    thinking_config: Optional[Dict[str, Any]] = None
+    thinking_config: ThinkingConfig | None = None
 
 @dataclass
 class Terminal:
@@ -478,7 +573,7 @@ class Terminal:
     3. 由调用方依据 reason 决定后续收尾策略
     """
     reason: str  # 终止原因，例如 completed、max_turns、aborted、error
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -544,7 +639,7 @@ class QueryPhaseTracker:
         *,
         reason: str,
         turn_count: int,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """
         发射"轮次完成"事件
@@ -585,14 +680,14 @@ class QueryPhaseTracker:
         self,
         phase: str,
         *,
-        turn_count: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        turn_count: int | None = None,
+        metadata: dict[str, Any] | None = None,
         pending_interaction: Any = _UNSET,
         active_tool_ids: Any = _UNSET,
         active_agent_id: Any = _UNSET,
         interrupt_reason: Any = _UNSET,
         resume_target: Any = _UNSET,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         阶段转换方法（核心方法）
 
@@ -617,13 +712,7 @@ class QueryPhaseTracker:
         state = self.state
         state.phase = phase
         if pending_interaction is not _UNSET:
-            if pending_interaction is None:
-                state.pending_interaction = None
-            elif isinstance(pending_interaction, dict):
-                state.pending_interaction = pending_interaction
-            else:
-                serialized = _serialize_ui_metadata([pending_interaction])
-                state.pending_interaction = serialized[0] if serialized else None
+            state.pending_interaction = _normalize_pending_interaction(pending_interaction)
         if active_tool_ids is not _UNSET:
             state.active_tool_ids = list(active_tool_ids or [])
         if active_agent_id is not _UNSET:
@@ -654,7 +743,7 @@ class QueryPhaseTracker:
         if self.runtime_controller is not None:
             emit = getattr(self.runtime_controller, "emit_runtime_event", None)
             if callable(emit):
-                payload: Dict[str, Any] = {
+                payload: dict[str, Any] = {
                     "phase": phase,
                     "turn_count": current_turn,
                     "checkpoint_id": checkpoint_id,
@@ -676,7 +765,7 @@ class QueryPhaseTracker:
 
 async def query(
     params: QueryParams,
-) -> AsyncGenerator[Dict[str, Any], None]:
+) -> AsyncGenerator[dict[str, Any], None]:
     """
     Query 主循环（外层包装）
 
@@ -697,14 +786,14 @@ async def query(
 
 async def query_loop(
     params: QueryParams,
-) -> AsyncGenerator[Dict[str, Any], None]:
+) -> AsyncGenerator[dict[str, Any], None]:
     """
     Query 核心循环（while True）
 
     [核心职责]
     这是整个 Codo 的心脏，负责驱动 AI 对话的完整生命周期：
     1. 管理对话状态（messages, turn_count, phase）
-    2. 调用 ?? API 获取响应
+    2. 调用 anthropic API 获取响应
     3. 并发执行工具调用
     4. 处理错误和重试
     5. 控制循环终止
@@ -727,7 +816,7 @@ async def query_loop(
         │  - 流式解析响应（text, thinking, tool_use）
         │  - 边解析边执行工具（并发）
         │
-        ┌─ 第 4 步：收集工具调用 (collect_tool_calls)
+        ┌─ 第 4 步：收集工具调用 (dispatch_tools)
         │  - 构建 assistant_message
         │  - 追加到 messages
         │  - 持久化到 session
@@ -816,38 +905,7 @@ async def query_loop(
             context={"session_id": session_id},
         )
 
-    last_started_turn: Optional[int] = None
-
-    def _safe_block_name(block: Any) -> str:
-        """
-        安全提取内容块的工具名称，兼容真实 API 对象和测试 Mock 对象。
-
-        [Workflow]
-        1. 若 block 是字典，直接取 "name" 键
-        2. 若 block 是对象，取 .name 属性
-        3. 若 .name 不是字符串（如 Mock 对象），尝试取 ._mock_name
-        4. 兜底返回空字符串
-
-        参数:
-            block: API 返回的内容块，可能是字典或 SDK 对象
-
-        返回:
-            str: 工具名称，如 "Bash"、"Read"，无法提取时返回 ""
-        """
-        if isinstance(block, dict):
-            name = block.get("name")
-            return name if isinstance(name, str) else str(name or "")
-
-        name = getattr(block, "name", None)
-        if isinstance(name, str):
-            return name
-
-        # 兼容 unittest.mock.Mock 对象（测试场景）
-        mock_name = getattr(block, "_mock_name", None)
-        if isinstance(mock_name, str) and mock_name:
-            return mock_name
-
-        return str(name or "")
+    last_started_turn: int | None = None
 
     try:
         while True:
@@ -873,7 +931,7 @@ async def query_loop(
                 "prepare_turn",
                 turn_count=turn_count,
                 metadata={"messages": len(messages)},
-                pending_interaction=None,
+                pending_interaction=None, #None是情况  unset是原值
                 active_tool_ids=[],
                 interrupt_reason=None,
                 resume_target=None,
@@ -893,13 +951,15 @@ async def query_loop(
             }
             if execution_context is not None and "queued_commands" in execution_context:
                 execution_context["queued_commands"] = []
+                #收集所有附件消息
             attachment_messages = await get_attachment_messages(
                 messages=messages,
                 turn_count=turn_count,
                 context=attachment_context,
             )
-            for att_msg in attachment_messages:
-                yield att_msg
+            for attachment_message in attachment_messages:
+                # 附件消息只作为本轮 API 上下文和 UI 事件使用，不写回 state.messages。
+                yield attachment_message
 
             await phase_tracker.transition(
                 "stream_assistant",
@@ -914,6 +974,7 @@ async def query_loop(
                 messages=messages_for_query,
                 context={"session_id": session_id},
             )
+            #压缩旧工具结果 
             if microcompact_result.compacted_count > 0:
                 if verbose:
                     logger.info(
@@ -926,6 +987,9 @@ async def query_loop(
             from codo.services.token_estimation import TokenBudget
 
             token_budget = TokenBudget(model)
+            
+            #检查是否到了阈值 需要压缩对话进行摘要
+
             compact_result = await auto_compact_if_needed(
                 client=client,
                 model=model,
@@ -997,11 +1061,6 @@ async def query_loop(
                     yield Terminal(reason="blocking_limit")
                     return
 
-            await phase_tracker.transition(
-                "execute_tools",
-                turn_count=turn_count,
-                metadata={"messages": len(messages_for_query)},
-            )
             streaming_tool_executor = StreamingToolExecutor(
                 tools=tools,
                 context=execution_context,
@@ -1009,114 +1068,96 @@ async def query_loop(
             )
 
             assistant_message = {"role": "assistant", "content": []}
-            tool_use_blocks: List[Any] = []
+            tool_use_blocks: list[Any] = []
             current_block_index = -1
 
             try:
                 from codo.services.prompt.messages import add_cache_breakpoints
 
                 messages_with_attachments = messages_for_query.copy()
+
                 if attachment_messages:
                     messages_with_attachments.extend(attachment_messages)
 
                 normalized_messages = normalize_messages_for_api(messages_with_attachments)
+
                 cached_messages = add_cache_breakpoints(normalized_messages, enable_caching=True)
+
+                # 参数验证
+                if not cached_messages:
+                    logger.error("API 调用失败：messages 为空")
+                    raise ValueError("messages cannot be empty")
+
+                if not system_prompt:
+                    logger.warning("system_prompt 为空，这可能导致 API 调用失败")
+
+                # 验证 messages 格式
+                for i, msg in enumerate(cached_messages):
+                    if not isinstance(msg, dict):
+                        logger.error(f"消息 {i} 不是字典类型: {type(msg)}")
+                        raise ValueError(f"Message {i} must be a dict, got {type(msg)}")
+                    if "role" not in msg:
+                        logger.error(f"消息 {i} 缺少 role 字段: {msg}")
+                        raise ValueError(f"Message {i} missing 'role' field")
+                    if "content" not in msg:
+                        logger.error(f"消息 {i} 缺少 content 字段: {msg}")
+                        raise ValueError(f"Message {i} missing 'content' field")
+                    # 验证 content 不能为空
+                    if not msg["content"]:
+                        logger.error(f"消息 {i} 的 content 为空: {msg}")
+                        raise ValueError(f"Message {i} has empty content")
 
                 api_kwargs = {
                     "model": model,
-                    "max_tokens": 16384,
+                    "max_tokens": MAX_TOKENS,
                     "temperature": 1.0,
                     "system": system_prompt,
                     "messages": cached_messages,
                     "tools": tool_schemas,
                 }
+
                 if thinking_config and thinking_config.get("type") == "enabled":
-                    budget = thinking_config.get("budget_tokens", 10000)
+
+                    budget = thinking_config.get("budget_tokens", THINKING_BUDGET_TOKENS)
+
                     api_kwargs["thinking"] = {
                         "type": "enabled",
                         "budget_tokens": budget,
                     }
+
                     api_kwargs["temperature"] = 1.0
-                    api_kwargs["max_tokens"] = max(16384, budget + 8192)
+                    api_kwargs["max_tokens"] = max(MAX_TOKENS, budget + THINKING_MARGIN_TOKENS)
 
-                try:
-                    stream_ctx = client.messages.stream(**api_kwargs)
-                    if inspect.isawaitable(stream_ctx):
-                        stream_ctx = await stream_ctx
-                except TypeError as call_error:
-                    if "unexpected keyword argument" not in str(call_error):
-                        raise
+                # 调试日志：记录 API 请求参数（不包含完整内容，避免日志过长）
+                logger.debug(f"API 请求参数: model={model}, max_tokens={api_kwargs['max_tokens']}, "
+                           f"message_count={len(cached_messages)}, tool_count={len(tool_schemas)}, "
+                           f"system_prompt_length={len(system_prompt) if system_prompt else 0}")
 
-                    stream_callable = getattr(client.messages, "stream", None)
-                    side_effect = getattr(stream_callable, "side_effect", None)
-                    if callable(side_effect):
-                        stream_ctx = side_effect()
-                    else:
-                        stream_ctx = client.messages.stream()
-                    if inspect.isawaitable(stream_ctx):
-                        stream_ctx = await stream_ctx
-
-                async with stream_ctx as stream:
-                    try:
-                        event_iter = stream.__aiter__()
-                    except TypeError as iter_error:
-                        raw_aiter = getattr(getattr(stream, "__dict__", {}), "get", lambda *_: None)("__aiter__")
-                        if not callable(raw_aiter):
-                            raise iter_error
-
-                        try:
-                            event_iter = raw_aiter()
-                        except TypeError:
-                            closure = getattr(raw_aiter, "__closure__", ()) or ()
-                            original_async_iter = None
-                            for cell in closure:
-                                value = cell.cell_contents
-                                if inspect.isasyncgenfunction(value) or inspect.iscoroutinefunction(value):
-                                    original_async_iter = value
-                                    break
-                            if original_async_iter is None:
-                                raise iter_error
-                            event_iter = original_async_iter()
-
-                    if hasattr(event_iter, "__anext__") and not hasattr(event_iter, "__aiter__"):
-                        raw_async_iter = event_iter
-
-                        async def _adapt_async_iterator():
-                            """
-                            将只有 __anext__ 而没有 __aiter__ 的异步迭代器适配为标准异步生成器。
-
-                            某些 Mock 对象或非标准流实现只提供 __anext__ 而缺少 __aiter__，
-                            此适配器将其包装为可用 async for 迭代的标准异步生成器。
-                            """
-                            while True:
-                                try:
-                                    yield await raw_async_iter.__anext__()
-                                except StopAsyncIteration:
-                                    return
-
-                        event_iter = _adapt_async_iterator()
-
-                    async for event in event_iter:
+                stream_context = await _open_anthropic_stream(client, api_kwargs)
+                async with stream_context as stream:
+                    async for event in stream:
                         if event.type == "content_block_start":
                             current_block_index += 1
                             block = event.content_block
-                            if block.type == "text":
+                            block_type = _get_sdk_block_type(block)
+                            if block_type == "text":
                                 assistant_message["content"].append({"type": "text", "text": ""})
-                            elif block.type == "thinking":
+                            elif block_type == "thinking":
                                 assistant_message["content"].append({"type": "thinking", "thinking": ""})
-                            elif block.type == "tool_use":
-                                tool_name = _safe_block_name(block)
+                            elif block_type == "tool_use":
+                                tool_id = _get_sdk_tool_id(block)
+                                tool_name = _get_sdk_tool_name(block)
                                 assistant_message["content"].append(
                                     {
                                         "type": "tool_use",
-                                        "id": block.id,
+                                        "id": tool_id,
                                         "name": tool_name,
                                         "input": {},
                                     }
                                 )
                                 streaming_tool_executor.register_tool(
                                     block={
-                                        "id": block.id,
+                                        "id": tool_id,
                                         "name": tool_name,
                                         "input": {},
                                     },
@@ -1157,54 +1198,37 @@ async def query_loop(
                         elif event.type == "content_block_stop":
                             yield {"type": "content_block_stop", "index": current_block_index}
 
-                if hasattr(stream, "get_final_message"):
-                    final_message = await stream.get_final_message()
-                    raw_blocks = getattr(final_message, "content", [])
-                    stop_reason = getattr(final_message, "stop_reason", None)
-                else:
-                    raw_blocks = assistant_message.get("content", [])
-                    stop_reason = None
+                final_message = await stream.get_final_message()
+                raw_blocks = final_message.content
+                stop_reason = _get_sdk_stop_reason(final_message)
 
-                serializable_content: List[Dict[str, Any]] = []
+                serializable_content: list[dict[str, Any]] = []
                 for block in raw_blocks:
-                    if isinstance(block, dict):
-                        block_type = block.get("type")
-                        block_id = block.get("id")
-                        block_input = block.get("input", {})
-                        block_text = block.get("text", "")
-                        block_thinking = block.get("thinking", "")
-                    else:
-                        block_type = getattr(block, "type", None)
-                        block_id = getattr(block, "id", None)
-                        block_input = getattr(block, "input", {})
-                        block_text = getattr(block, "text", "")
-                        block_thinking = getattr(block, "thinking", "")
-
+                    block_type = _get_sdk_block_type(block)
                     if block_type == "text":
-                        serializable_content.append({"type": "text", "text": block_text})
+                        serializable_content.append(
+                            {"type": "text", "text": _get_sdk_block_text(block)}
+                        )
                     elif block_type == "thinking":
-                        serializable_content.append({"type": "thinking", "thinking": block_thinking})
+                        serializable_content.append(
+                            {"type": "thinking", "thinking": _get_sdk_block_thinking(block)}
+                        )
                     elif block_type == "tool_use":
-                        if (not block_input) and isinstance(block, dict):
-                            partial = block.get("input_json_str")
-                            if isinstance(partial, str) and partial.strip():
-                                try:
-                                    block_input = json.loads(partial)
-                                except Exception:
-                                    block_input = {}
-                        tool_name = _safe_block_name(block)
+                        tool_id = _get_sdk_tool_id(block)
+                        tool_name = _get_sdk_tool_name(block)
+                        tool_input = _get_sdk_tool_input(block)
                         serializable_content.append(
                             {
                                 "type": "tool_use",
-                                "id": block_id,
+                                "id": tool_id,
                                 "name": tool_name,
-                                "input": block_input,
+                                "input": tool_input,
                             }
                         )
                         tool_use_blocks.append(block)
                         for tracked_tool in streaming_tool_executor.tools:
-                            if tracked_tool.id == block_id:
-                                tracked_tool.block["input"] = block_input
+                            if tracked_tool.id == tool_id:
+                                tracked_tool.block["input"] = tool_input
                                 break
 
                 assistant_message["content"] = serializable_content
@@ -1213,7 +1237,7 @@ async def query_loop(
                 messages_for_query.append(assistant_message)
 
                 await phase_tracker.transition(
-                    "collect_tool_calls",
+                    "dispatch_tools",
                     turn_count=turn_count,
                     metadata={
                         "tool_count": len(tool_use_blocks),
@@ -1230,7 +1254,7 @@ async def query_loop(
 
                 yield {"type": "message_stop"}
 
-                max_output_tokens_recovery_limit = 3
+                max_output_tokens_recovery_limit = MAX_TURNS_RECOVERY_LIMIT
                 if stop_reason == "max_tokens" and not tool_use_blocks:
                     if max_output_tokens_recovery_count < max_output_tokens_recovery_limit:
                         if verbose:
@@ -1263,6 +1287,17 @@ async def query_loop(
 
             except Exception as e:
                 category = classify_api_error(e)
+
+                # 记录详细错误信息以便调试
+                if category == APIErrorCategory.BAD_REQUEST:
+                    logger.error(f"[query_loop] API BAD_REQUEST 错误: {e}")
+                    logger.error(f"[query_loop] 错误详情: {repr(e)}")
+                    # 如果是 Anthropic API 错误，记录响应体
+                    if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                        logger.error(f"[query_loop] API 响应: {e.response.text}")
+                    # 记录最后几条消息以便调试
+                    logger.error(f"[query_loop] 最后 3 条消息: {messages_for_query[-3:]}")
+
                 if category == APIErrorCategory.PROMPT_TOO_LONG:
                     if not has_attempted_reactive_compact:
                         if verbose:
@@ -1423,8 +1458,8 @@ async def query_loop(
                     "tool_use_id": result.tool_use_id,
                     "content": result.content or "",
                     "receipt": receipt_to_dict(result.receipt) if result.receipt else None,
-                    "staged_changes": _serialize_ui_metadata(result.staged_changes),
-                    "audit_events": _serialize_ui_metadata(result.audit_events),
+                    "staged_changes": serialize_ui_metadata(result.staged_changes),
+                    "audit_events": serialize_ui_metadata(result.audit_events),
                     "is_error": result.is_error,
                     "status": result.status,
                 }
@@ -1437,8 +1472,8 @@ async def query_loop(
                     "tool_use_id": result.tool_use_id,
                     "content": result.content or "",
                     "receipt": receipt_to_dict(result.receipt) if result.receipt else None,
-                    "staged_changes": _serialize_ui_metadata(result.staged_changes),
-                    "audit_events": _serialize_ui_metadata(result.audit_events),
+                    "staged_changes": serialize_ui_metadata(result.staged_changes),
+                    "audit_events": serialize_ui_metadata(result.audit_events),
                     "is_error": result.is_error,
                     "status": result.status,
                 }
@@ -1624,7 +1659,7 @@ async def query_loop(
 async def _run_memory_extraction(
     client: AsyncAnthropic,
     model: str,
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     cwd: str,
     state: MemoryExtractionState,
 ):

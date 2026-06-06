@@ -9,32 +9,29 @@
 5. Hook 超时处理
 """
 
-import asyncio
-import json
 import os
 import sys
 import tempfile
 from pathlib import Path
+
 import pytest
 
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from codo.services.tools.hooks import (
+    aggregate_hook_results,
+    execute_hook,
+    parse_hook_output,
+    run_post_tool_use_failure_hooks,
+    run_post_tool_use_hooks,
+    run_pre_tool_use_hooks,
+)
 from codo.types.hooks import (
     HookConfig,
     HookResult,
     PreToolUseHookInput,
-    PostToolUseHookInput,
-    PostToolUseFailureHookInput,
-)
-from codo.services.tools.hooks import (
-    execute_hook,
-    parse_hook_output,
-    aggregate_hook_results,
-    run_pre_tool_use_hooks,
-    run_post_tool_use_hooks,
-    run_post_tool_use_failure_hooks,
 )
 
 # ============================================================================

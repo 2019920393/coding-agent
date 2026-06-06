@@ -12,9 +12,8 @@
 
 import os
 import stat
-from pathlib import Path
-from typing import Optional, Tuple
 from datetime import datetime, timezone
+from pathlib import Path
 
 try:
     import aiofiles
@@ -29,6 +28,7 @@ class FileSystemOperations:
     _instance = None
 
     def __new__(cls):
+        """实现单例模式：若实例已存在则直接返回，否则创建新实例。"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -62,7 +62,7 @@ class FileSystemOperations:
         Returns:
             文件内容
         """
-        with open(path, 'r', encoding=encoding) as f:
+        with open(path, encoding=encoding) as f:
             return f.read()
 
     def readFileBytes(self, path: str) -> bytes:
@@ -196,7 +196,7 @@ class FileSystemOperations:
             # 回退到同步操作
             return self.readFile(path, encoding)
 
-        async with aiofiles.open(path, 'r', encoding=encoding) as f:
+        async with aiofiles.open(path, encoding=encoding) as f:
             return await f.read()
 
     async def readFileBytesAsync(self, path: str) -> bytes:

@@ -1,36 +1,37 @@
 """
 工具模式转换
 
-将工具定义转换为 ?? API 格式的 JSON Schema。
+将工具定义转换为模型 API 格式的 JSON Schema。
 
 参考：src/utils/api.ts - toolToAPISchema()
 简化：移除工具模式缓存、defer_loading、Beta 头管理
 保留：基础 JSON Schema 转换、工具描述生成
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Any
+
 from pydantic import BaseModel
-from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
-from pydantic_core import core_schema
+
 from codo.tools.base import Tool
+
 
 class PydanticToJsonSchemaConverter:
     """
     Pydantic 模型转 JSON Schema 转换器
 
     [Workflow]
-    将 Pydantic 模型转换为 ?? API 兼容的 JSON Schema
+    将 Pydantic 模型转换为模型 API 兼容的 JSON Schema
     """
 
     @staticmethod
-    def convert(model: type[BaseModel]) -> Dict[str, Any]:
+    def convert(model: type[BaseModel]) -> dict[str, Any]:
         """
         转换 Pydantic 模型为 JSON Schema
 
         [Workflow]
         1. 使用 Pydantic 的 model_json_schema() 生成基础 schema
         2. 移除不必要的字段（$defs、title 等）
-        3. 确保符合 ?? API 要求
+        3. 确保符合模型 API 要求
 
         Args:
             model: Pydantic 模型类
@@ -41,10 +42,10 @@ class PydanticToJsonSchemaConverter:
         # 生成基础 JSON Schema
         schema = model.model_json_schema()
 
-        # 移除顶层的 title（?? API 不需要）
+        # 移除顶层的 title（模型 API 不需要）
         schema.pop("title", None)
 
-        # 移除顶层的 description（?? API input_schema 不允许顶层 description）
+        # 移除顶层的 description（模型 API input_schema 不允许顶层 description）
         schema.pop("description", None)
 
         # 移除 $defs（如果存在且为空）
@@ -61,7 +62,7 @@ class PydanticToJsonSchemaConverter:
 
         return schema
 
-async def tool_to_api_schema(tool: Tool, options: Dict[str, Any] = None) -> Dict[str, Any]:
+async def tool_to_api_schema(tool: Tool, options: dict[str, Any] = None) -> dict[str, Any]:
     """
     将工具转换为 anthropic API 格式的 schema
 
@@ -69,7 +70,7 @@ async def tool_to_api_schema(tool: Tool, options: Dict[str, Any] = None) -> Dict
     1. 获取工具名称
     2. 生成工具描述（调用 tool.prompt()）
     3. 转换输入 schema（Pydantic → JSON Schema）
-    4. 组装为 ?? API 格式
+    4. 组装为模型 API 格式
     5. 添加缓存控制
 
     Args:
@@ -77,7 +78,7 @@ async def tool_to_api_schema(tool: Tool, options: Dict[str, Any] = None) -> Dict
         options: 传递给 tool.prompt() 的选项（包含 tools, agents 等）
 
     Returns:
-        ?? API 格式的工具 schema
+        模型 API 格式的工具 schema
     """
     # 获取工具名称
     name = tool.name
@@ -111,9 +112,9 @@ async def tool_to_api_schema(tool: Tool, options: Dict[str, Any] = None) -> Dict
     return schema
 
 async def tools_to_api_schemas(
-    tools: List[Tool],
-    agents: Optional[List[Any]] = None,
-) -> List[Dict[str, Any]]:
+    tools: list[Tool],
+    agents: list[Any] | None = None,
+) -> list[dict[str, Any]]:
     """
     将工具列表转换为 anthropic API 格式的 schema 列表
 
@@ -150,7 +151,7 @@ async def tools_to_api_schemas(
 
     return schemas
 
-def format_tool_list_for_prompt(tools: List[Tool]) -> str:
+def format_tool_list_for_prompt(tools: list[Tool]) -> str:
     """
     格式化工具列表为提示词文本（用于调试）
 

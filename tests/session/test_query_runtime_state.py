@@ -1,5 +1,6 @@
 from codo.query import QueryState
 
+
 def test_query_state_exposes_phase_checkpoint_and_interaction_fields():
     state = QueryState(messages=[])
 

@@ -1,104 +1,101 @@
-"""Canonical runtime protocol for the rebuilt Textual-driven execution flow."""
+"""Canonical runtime protocol for desktop-driven execution."""
 
 from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import Any, Dict, Optional
+from dataclasses import dataclass, field
+from typing import Any
 
-# 把复杂对象（数据类、列表、字典嵌套）转换成纯 JSON 友好的普通字典 / 列表 / 基础类型
-def _serialize(value: Any) -> Any:
-    if is_dataclass(value):
-        return asdict(value)
-    if isinstance(value, list):
-        return [_serialize(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _serialize(item) for key, item in value.items()}
-    return value
+from codo.types.runtime import CheckpointMetadata, InteractionData, JsonObject
+from codo.utils.serialize import serialize_to_json
 
-#核心作用是定义一个「运行时检查点」的数据结构
+
 @dataclass
 class RuntimeCheckpoint:
     checkpoint_id: str
     phase: str
     turn_count: int
     created_at: float = field(default_factory=time.time)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: CheckpointMetadata = field(default_factory=dict)
 
 @dataclass
 class RuntimeEvent:
     type: str
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: JsonObject = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
 
-    def as_legacy_event(self) -> dict[str, Any]:
-        return {"type": self.type, **_serialize(self.payload)}
+    def as_legacy_event(self) -> JsonObject:
+        payload = serialize_to_json(self.payload)
+        if not isinstance(payload, dict):
+            return {"type": self.type}
+        return {"type": self.type, **payload}
 
 @dataclass
 class RuntimeCommand:
     type: str
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: JsonObject = field(default_factory=dict)
 
 class QueryRuntimeController:
-    """查询与UI界面的桥接."""
-
     _SENTINEL = object()
     _COMMAND_SENTINEL = object()
 
     def __init__(self) -> None:
-        self._events: asyncio.Queue[Any] = asyncio.Queue()
-        self._commands: asyncio.Queue[Any] = asyncio.Queue()
-        self._pending_interactions: dict[str, asyncio.Future[Any]] = {}
+        self._events: asyncio.Queue[RuntimeEvent | RuntimeCommand | object] = asyncio.Queue()
+        self._commands: asyncio.Queue[RuntimeEvent | RuntimeCommand | object] = asyncio.Queue()
+        self._pending_interactions: dict[str, asyncio.Future[InteractionData]] = {}
         self._checkpoints: dict[str, RuntimeCheckpoint] = {}
-        self._latest_checkpoint_id: Optional[str] = None
+        self._latest_checkpoint_id: str | None = None
 
-    async def emit(self, event: Any) -> None:
+    async def emit(self, event: RuntimeEvent) -> None:
         await self._events.put(event)
 
-    async def emit_runtime_event(self, event_type: str, **payload: Any) -> None:
-        await self.emit(RuntimeEvent(type=event_type, payload=payload))
-#往两个队列各放一个哨兵：
+    async def emit_terminal(self, terminal: object) -> None:
+        await self._events.put(terminal)
 
-#_events 队列：告诉 UI "事件流结束了"
-#_commands 队列：告诉命令泵 "不用再监听了"
+    async def emit_runtime_event(self, event_type: str, **payload: Any) -> None:
+        serialized = serialize_to_json(payload)
+        if not isinstance(serialized, dict):
+            serialized = {}
+        await self.emit(RuntimeEvent(type=event_type, payload=serialized))
+
     async def finish(self) -> None:
         await self._events.put(self._SENTINEL)
         await self._commands.put(self._COMMAND_SENTINEL)
 
-    async def next_event(self) -> Any:
+    async def next_event(self) -> RuntimeEvent | RuntimeCommand | object:
         return await self._events.get()
 
     async def send_command(self, command: RuntimeCommand) -> None:
         await self._commands.put(command)
 
-    async def next_command(self) -> Any:
+    async def next_command(self) -> RuntimeEvent | RuntimeCommand | object:
         return await self._commands.get()
 
-    async def request_interaction(self, request: Any, **payload: Any) -> Any:
+    async def request_interaction(self, request: object, **payload: Any) -> InteractionData:
         loop = asyncio.get_running_loop()
-        future: asyncio.Future[Any] = loop.create_future()
+        future: asyncio.Future[InteractionData] = loop.create_future()
         request_id = getattr(request, "request_id", None)
         if not request_id:
             raise ValueError("interaction request_id is required")
         self._pending_interactions[request_id] = future
         await self.emit_runtime_event(
             "interaction_requested",
-            request=_serialize(request),
+            request=serialize_to_json(request),
             **payload,
         )
         return await future
 
-    async def request(self, request: Any, **payload: Any) -> Any:
+    async def request(self, request: object, **payload: Any) -> InteractionData:
         return await self.request_interaction(request, **payload)
 
-    def resolve_interaction(self, request_id: str, data: Any) -> None:
+    def resolve_interaction(self, request_id: str, data: InteractionData) -> None:
         self._events.put_nowait(
             RuntimeEvent(
                 type="interaction_resolved",
                 payload={
                     "request_id": request_id,
-                    "data": _serialize(data),
+                    "data": data,
                 },
             )
         )
@@ -125,12 +122,12 @@ class QueryRuntimeController:
         self._checkpoints[checkpoint.checkpoint_id] = checkpoint
         self._latest_checkpoint_id = checkpoint.checkpoint_id
 
-    def get_checkpoint(self, checkpoint_id: str) -> Optional[RuntimeCheckpoint]:
+    def get_checkpoint(self, checkpoint_id: str) -> RuntimeCheckpoint | None:
         return self._checkpoints.get(checkpoint_id)
 
     def export_checkpoints(self) -> dict[str, RuntimeCheckpoint]:
         return dict(self._checkpoints)
 
     @property
-    def latest_checkpoint_id(self) -> Optional[str]:
+    def latest_checkpoint_id(self) -> str | None:
         return self._latest_checkpoint_id

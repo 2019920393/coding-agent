@@ -4,9 +4,9 @@ ReadTool 类型定义
 定义 ReadTool 的输入输出 schema。
 """
 
+
 from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime
+
 
 class ReadToolInput(BaseModel):
     """ReadTool 输入参数"""
@@ -15,17 +15,17 @@ class ReadToolInput(BaseModel):
         description="要读取的文件的绝对路径"
     )
 
-    offset: Optional[int] = Field(
+    offset: int | None = Field(
         default=0,
         description="起始行号（从 0 开始）。仅在文件过大无法一次读取时提供"
     )
 
-    limit: Optional[int] = Field(
+    limit: int | None = Field(
         default=None,
         description="要读取的行数。仅在文件过大无法一次读取时提供"
     )
 
-    pages: Optional[str] = Field(
+    pages: str | None = Field(
         default=None,
         description="PDF 文件的页码范围（例如 '1-5'、'3'、'10-20'）。仅适用于 PDF 文件。每次请求最多 20 页"
     )

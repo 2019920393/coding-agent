@@ -6,26 +6,26 @@ LSP 客户端实现
 
 import asyncio
 import logging
-from typing import Optional, Dict, Any, Callable, List
-from pathlib import Path
 import subprocess
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
 from lsprotocol.types import (
+    ClientCapabilities,
+    DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams,
+    InitializedParams,
     InitializeParams,
     InitializeResult,
-    InitializedParams,
-    ClientCapabilities,
-    TextDocumentItem,
-    DidOpenTextDocumentParams,
-    DidCloseTextDocumentParams,
     TextDocumentIdentifier,
-    Position,
+    TextDocumentItem,
     WorkspaceFolder,
 )
 from pygls.client import JsonRPCClient
 from pygls.protocol import JsonRPCProtocol
 
-from .types import LSPServerConfig, LSPRequest, LSPResponse
+from .types import LSPServerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class LSPClient:
     def __init__(
         self,
         server_config: LSPServerConfig,
-        on_crash: Optional[Callable[[Exception], None]] = None,
+        on_crash: Callable[[Exception], None] | None = None,
     ):
         """初始化 LSP 客户端
 
@@ -50,24 +50,38 @@ class LSPClient:
         self.on_crash = on_crash
 
         # 状态
-        self._process: Optional[subprocess.Popen] = None
-        self._client: Optional[JsonRPCClient] = None
-        self._protocol: Optional[JsonRPCProtocol] = None
-        self._capabilities: Optional[Dict[str, Any]] = None
+        self._process: subprocess.Popen | None = None
+        self._client: JsonRPCClient | None = None
+        self._protocol: JsonRPCProtocol | None = None
+        self._capabilities: dict[str, Any] | None = None
         self._is_initialized = False
         self._is_stopping = False
         self._start_failed = False
-        self._start_error: Optional[Exception] = None
+        self._start_error: Exception | None = None
 
         # 已打开的文件
-        self._opened_files: Dict[str, int] = {}  # file_path -> version
+        self._opened_files: dict[str, int] = {}  # file_path -> version
 
         # 待处理的通知和请求处理器
-        self._pending_notification_handlers: List[tuple[str, Callable]] = []
-        self._pending_request_handlers: List[tuple[str, Callable]] = []
+        self._pending_notification_handlers: list[tuple[str, Callable]] = []
+        self._pending_request_handlers: list[tuple[str, Callable]] = []
+
+    def _start_process(self, command: list[str], cwd: str | None) -> subprocess.Popen:
+        env = dict(self.server_config.env or {})
+        return subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            cwd=cwd,
+            creationflags=(
+                subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            ),
+        )
 
     @property
-    def capabilities(self) -> Optional[Dict[str, Any]]:
+    def capabilities(self) -> dict[str, Any] | None:
         """服务器能力"""
         return self._capabilities
 
@@ -77,7 +91,7 @@ class LSPClient:
         return self._is_initialized
 
     @property
-    def opened_files(self) -> Dict[str, int]:
+    def opened_files(self) -> dict[str, int]:
         """已打开的文件"""
         return self._opened_files.copy()
 
@@ -89,7 +103,7 @@ class LSPClient:
             )
             raise error
 
-    async def start(self, cwd: Optional[str] = None) -> None:
+    async def start(self, cwd: str | None = None) -> None:
         """启动 LSP 服务器
 
         Args:
@@ -102,20 +116,8 @@ class LSPClient:
             # 构建命令
             command = [self.server_config.command] + self.server_config.args
 
-            # 准备环境变量
-            env = dict(self.server_config.env or {})
-
             # 启动进程
-            self._process = subprocess.Popen(
-                command,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=env,
-                cwd=cwd,
-                # Windows 下隐藏控制台窗口
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
-            )
+            self._process = await asyncio.to_thread(self._start_process, command, cwd)
 
             # 等待进程启动
             await asyncio.sleep(0.1)
@@ -197,8 +199,8 @@ class LSPClient:
 
     async def initialize(
         self,
-        workspace_folders: Optional[List[str]] = None,
-        initialization_options: Optional[Dict[str, Any]] = None,
+        workspace_folders: list[str] | None = None,
+        initialization_options: dict[str, Any] | None = None,
     ) -> InitializeResult:
         """初始化 LSP 服务器
 

@@ -1,6 +1,7 @@
 """WebFetchTool 类型定义"""
 from pydantic import BaseModel, Field
 
+
 class WebFetchInput(BaseModel):
     """WebFetch 输入参数"""
     url: str = Field(description="The URL to fetch content from")

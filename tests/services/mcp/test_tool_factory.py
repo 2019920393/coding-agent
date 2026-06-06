@@ -4,18 +4,20 @@
 验证 MCP 工具的创建、命名和调用逻辑
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from codo.services.mcp.tool_factory import (
+    _extract_mcp_result_content,
     build_mcp_tool_name,
     create_mcp_tool,
-    fetch_mcp_tools,
     fetch_all_mcp_tools,
-    _extract_mcp_result_content,
+    fetch_mcp_tools,
 )
 from codo.services.mcp.types import MCPToolInfo
 from codo.tools.base import ToolUseContext
+
 
 def test_build_mcp_tool_name():
     """测试 MCP 工具名称构建"""

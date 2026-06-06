@@ -7,17 +7,20 @@ MCP 工具工厂
 4. 返回工具列表供 QueryEngine 使用
 """
 
-from typing import List, Any
+import logging
+from typing import Any
 
-from codo.tools.base import Tool, ToolUseContext
+from codo.services.mcp.client import MCPClientManager
+from codo.services.mcp.types import MCPToolInfo
+from codo.tools.base import Tool
 from codo.tools.mcp_tool import (
     MCPToolInput,
     MCPToolOutput,
     create_mcp_tool_instance,
 )
 from codo.tools.types import ToolResult
-from codo.services.mcp.client import MCPClientManager
-from codo.services.mcp.types import MCPToolInfo
+
+logger = logging.getLogger(__name__)
 
 def build_mcp_tool_name(server_name: str, tool_name: str) -> str:
     """
@@ -64,7 +67,7 @@ async def create_mcp_tool(
 
     async def mcp_call(
         input_data: MCPToolInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         on_progress=None
     ) -> ToolResult[MCPToolOutput]:
         """
@@ -176,7 +179,7 @@ def _extract_mcp_result_content(result: Any) -> str:
 async def fetch_mcp_tools(
     mcp_client: MCPClientManager,
     server_name: str
-) -> List[Tool]:
+) -> list[Tool]:
     """
     从 MCP 服务器获取所有工具
 
@@ -206,14 +209,12 @@ async def fetch_mcp_tools(
         return tools
 
     except Exception as e:
-        # 记录错误但不中断
-
-        print(f"Warning: Failed to fetch MCP tools from {server_name}: {e}")
+        logger.warning("Failed to fetch MCP tools from %s: %s", server_name, e)
         return []
 
 async def fetch_all_mcp_tools(
     mcp_client: MCPClientManager
-) -> List[Tool]:
+) -> list[Tool]:
     """
     从所有已连接的 MCP 服务器获取工具
 

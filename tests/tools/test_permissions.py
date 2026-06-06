@@ -4,38 +4,34 @@
 测试权限检查器、规则管理和工具集成。
 """
 
-import pytest
-import os
-from typing import Dict, Any
+from typing import Any
 
+import pytest
+
+from codo.services.tools.permission_checker import (
+    check_path_safety,
+    create_default_permission_context,
+    has_permissions_to_use_tool,
+)
+from codo.services.tools.permission_rules import (
+    format_permission_rule_value,
+    get_allow_rules,
+    get_deny_rules,
+    parse_permission_rule_value,
+    tool_always_allowed_rule,
+    tool_matches_rule,
+)
 from codo.tools.base import Tool, ToolUseContext
 from codo.tools.types import ToolResult
 from codo.types.permissions import (
     PermissionMode,
+    PermissionRule,
     PermissionRuleSource,
     PermissionRuleValue,
-    PermissionRule,
     ToolPermissionContext,
-    create_passthrough_result,
-    create_deny_decision,
     create_ask_decision,
-)
-from codo.services.tools.permission_rules import (
-    parse_permission_rule_value,
-    format_permission_rule_value,
-    tool_matches_rule,
-    get_allow_rules,
-    get_deny_rules,
-    get_ask_rules,
-    tool_always_allowed_rule,
-    get_deny_rule_for_tool,
-    get_ask_rule_for_tool,
-    get_rule_by_contents_for_tool,
-)
-from codo.services.tools.permission_checker import (
-    has_permissions_to_use_tool,
-    check_path_safety,
-    create_default_permission_context,
+    create_deny_decision,
+    create_passthrough_result,
 )
 
 # ============================================================================
@@ -65,24 +61,24 @@ class MockReadTool(MockBaseTool):
     """模拟只读工具"""
     name = "MockRead"
 
-    def is_concurrency_safe(self, input_data: Dict[str, Any]) -> bool:
+    def is_concurrency_safe(self, input_data: dict[str, Any]) -> bool:
         return True
 
-    def is_read_only(self, input_data: Dict[str, Any]) -> bool:
+    def is_read_only(self, input_data: dict[str, Any]) -> bool:
         return True
 
 class MockWriteTool(MockBaseTool):
     """模拟写入工具"""
     name = "MockWrite"
 
-    def is_concurrency_safe(self, input_data: Dict[str, Any]) -> bool:
+    def is_concurrency_safe(self, input_data: dict[str, Any]) -> bool:
         return False
 
 class MockDangerousTool(MockBaseTool):
     """模拟危险工具（自定义权限检查）"""
     name = "MockDangerous"
 
-    async def check_permissions(self, input_data: Dict[str, Any], context: ToolUseContext):
+    async def check_permissions(self, input_data: dict[str, Any], context: ToolUseContext):
         """检查危险命令"""
         command = input_data.get("command", "")
         if "rm -rf /" in command:
@@ -103,7 +99,7 @@ class ContextAwarePermissionTool(MockBaseTool):
     def __init__(self):
         self.seen_context_types: list[type] = []
 
-    async def check_permissions(self, input_data: Dict[str, Any], context: ToolUseContext):
+    async def check_permissions(self, input_data: dict[str, Any], context: ToolUseContext):
         self.seen_context_types.append(type(context))
         return create_passthrough_result()
 

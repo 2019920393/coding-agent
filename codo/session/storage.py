@@ -9,76 +9,84 @@
 """
 
 import json
+import logging
 import os
-import re
-from pathlib import Path
-from typing import Optional, List, Dict, Any, Set, Tuple
 from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from codo.session.types import (
+    AgentColorEntry,
+    AgentNameEntry,
+    ContentReplacementEntry,
+    CustomTitleEntry,
+    LastPromptEntry,
+    LoadedSession,
+    ModeEntry,
+    SessionEvent,
+    SessionMetadata,
+    SessionSnapshot,
+    TagEntry,
     TranscriptEntry,
     TranscriptMessage,
-    SessionMetadata,
-    LoadedSession,
-    SessionEvent,
-    SessionSnapshot,
-    CustomTitleEntry,
-    TagEntry,
-    AgentNameEntry,
-    AgentColorEntry,
-    ModeEntry,
-    LastPromptEntry,
-    ContentReplacementEntry,
 )
 
-_RUNTIME_REPLAY_EVENT_TYPES = {
-    "tool_started",
-    "tool_progress",
-    "tool_completed",
-    "tool_result",
-    "todo_updated",
-    "agent_started",
-    "agent_delta",
-    "agent_tool_started",
-    "agent_tool_completed",
-    "agent_completed",
-    "agent_error",
-    "status_changed",
-    "checkpoint_restored",
-    "interrupt_ack",
-    "turn_completed",
-}
+logger = logging.getLogger(__name__)
 
-_RETRYABLE_RUNTIME_PHASES = {
-    "prepare_turn",
-    "stream_assistant",
-    "collect_tool_calls",
-    "execute_tools",
-    "wait_interaction",
-    "apply_interaction_result",
-    "stop_hooks",
-    "compact",
-}
 
-_SNAPSHOT_REFRESH_EVENT_TYPES = {
-    "interaction_requested",
-    "interaction_resolved",
-    "tool_completed",
-    "tool_result",
-    "todo_updated",
-    "agent_started",
-    "agent_delta",
-    "agent_tool_started",
-    "agent_tool_completed",
-    "agent_completed",
-    "agent_error",
-    "status_changed",
-    "checkpoint_restored",
-    "interrupt_ack",
-    "turn_completed",
-    "permission_mode_changed",
-}
+class RuntimeEventType(str, Enum):
+    TOOL_STARTED = "tool_started"
+    TOOL_PROGRESS = "tool_progress"
+    TOOL_COMPLETED = "tool_completed"
+    TOOL_RESULT = "tool_result"
+    TODO_UPDATED = "todo_updated"
+    AGENT_STARTED = "agent_started"
+    AGENT_DELTA = "agent_delta"
+    AGENT_TOOL_STARTED = "agent_tool_started"
+    AGENT_TOOL_COMPLETED = "agent_tool_completed"
+    AGENT_COMPLETED = "agent_completed"
+    AGENT_ERROR = "agent_error"
+    STATUS_CHANGED = "status_changed"
+    CHECKPOINT_RESTORED = "checkpoint_restored"
+    INTERRUPT_ACK = "interrupt_ack"
+    TURN_COMPLETED = "turn_completed"
+
+
+class RetryablePhase(str, Enum):
+    PREPARE_TURN = "prepare_turn"
+    STREAM_ASSISTANT = "stream_assistant"
+    DISPATCH_TOOLS = "dispatch_tools"
+    COLLECT_TOOL_RESULTS = "collect_tool_results"
+    WAIT_INTERACTION = "wait_interaction"
+    APPLY_INTERACTION_RESULT = "apply_interaction_result"
+    STOP_HOOKS = "stop_hooks"
+    COMPACT = "compact"
+
+
+class SnapshotRefreshEventType(str, Enum):
+    INTERACTION_REQUESTED = "interaction_requested"
+    INTERACTION_RESOLVED = "interaction_resolved"
+    TOOL_COMPLETED = "tool_completed"
+    TOOL_RESULT = "tool_result"
+    TODO_UPDATED = "todo_updated"
+    AGENT_STARTED = "agent_started"
+    AGENT_DELTA = "agent_delta"
+    AGENT_TOOL_STARTED = "agent_tool_started"
+    AGENT_TOOL_COMPLETED = "agent_tool_completed"
+    AGENT_COMPLETED = "agent_completed"
+    AGENT_ERROR = "agent_error"
+    STATUS_CHANGED = "status_changed"
+    CHECKPOINT_RESTORED = "checkpoint_restored"
+    INTERRUPT_ACK = "interrupt_ack"
+    TURN_COMPLETED = "turn_completed"
+    PERMISSION_MODE_CHANGED = "permission_mode_changed"
+
+
+_RUNTIME_REPLAY_EVENT_TYPES = {event_type.value for event_type in RuntimeEventType}
+_RETRYABLE_RUNTIME_PHASES = {phase.value for phase in RetryablePhase}
+_SNAPSHOT_REFRESH_EVENT_TYPES = {event_type.value for event_type in SnapshotRefreshEventType}
 
 # ============================================================================
 # 路径管理
@@ -122,22 +130,25 @@ def get_session_file_path(session_id: str, cwd: str) -> Path:
     return sessions_dir / f"{session_id}.jsonl"
 
 
-# 新版append-onlu事件日志
+# 新版append-only事件日志
 def get_session_event_log_path(session_id: str, cwd: str) -> Path:
+    """返回会话事件日志文件路径（.events.jsonl 格式）。"""
     sessions_dir = get_sessions_dir(cwd)
     return sessions_dir / f"{session_id}.events.jsonl"
-#事件日志的物化快照（加速加载）
+
+# 事件日志的物化快照（加速加载）
 def get_session_snapshot_path(session_id: str, cwd: str) -> Path:
+    """返回会话快照文件路径（.snapshot.json 格式，用于加速加载）。"""
     sessions_dir = get_sessions_dir(cwd)
     return sessions_dir / f"{session_id}.snapshot.json"
 
-def list_session_files(project_dir: str) -> List[Tuple[str, str, int, float]]:
+def list_session_files(project_dir: str) -> list[tuple[str, str, int, float]]:
     """列出项目会话目录内的转录 JSONL 文件"""
     project_path = Path(project_dir)
     if not project_path.exists() or not project_path.is_dir():
         return []
 
-    sessions: List[Tuple[str, str, int, float]] = []
+    sessions: list[tuple[str, str, int, float]] = []
     for file_path in project_path.glob("*.jsonl"):
         if file_path.name.endswith(".events.jsonl"):
             continue
@@ -176,25 +187,25 @@ class SessionStorage:
         self.session_id = session_id
         self.cwd = cwd
         self.transcript_file: Path = get_session_file_path(session_id, cwd)
-        self.session_file: Optional[Path] = None
+        self.session_file: Path | None = None
         self.event_log_file: Path = get_session_event_log_path(session_id, cwd)
         self.snapshot_file: Path = get_session_snapshot_path(session_id, cwd)
 
         # 元数据缓存
-        self.current_title: Optional[str] = None  # 不太理解
-        self.current_tag: Optional[str] = None      # 不太理解
-        self.current_agent_name: Optional[str] = None   # 不太理解
-        self.current_agent_color: Optional[str] = None  # 不太理解
-        self.current_mode: Optional[str] = None # 不太理解
-        self.current_last_prompt: Optional[str] = None   # 不太理解
+        self.current_title: str | None = None  # 不太理解
+        self.current_tag: str | None = None      # 不太理解
+        self.current_agent_name: str | None = None   # 不太理解
+        self.current_agent_color: str | None = None  # 不太理解
+        self.current_mode: str | None = None # 不太理解
+        self.current_last_prompt: str | None = None   # 不太理解
 
         # 待写入条目（在文件创建前缓存）
-        self.pending_entries: List[TranscriptEntry] = []
+        self.pending_entries: list[TranscriptEntry] = []
 
         # 已记录的消息 UUID 集合（用于去重）
-        self.recorded_message_uuids: Set[str] = set()
-        self._snapshot_messages: List[Dict[str, Any]] = []
-        self._last_parent_uuid: Optional[str] = None
+        self.recorded_message_uuids: set[str] = set()
+        self._snapshot_messages: list[dict[str, Any]] = []
+        self._last_parent_uuid: str | None = None
         self._bootstrap_existing_transcript_state()
 
     def _bootstrap_existing_transcript_state(self) -> None:
@@ -228,7 +239,66 @@ class SessionStorage:
             leaf_uuid = loaded.messages[-1].uuid
         self._last_parent_uuid = leaf_uuid
 
-    def _refresh_snapshot_messages_from_transcript(self, leaf_uuid: Optional[str] = None) -> None:
+    def _apply_loaded_metadata(self, metadata: SessionMetadata) -> None:
+        """
+        把已加载会话的元数据同步到当前存储实例。
+
+        [Workflow]
+        1. 接收 load_session 或事件重放得到的 SessionMetadata
+        2. 逐项刷新当前实例的标题、标签、Agent 信息和模式
+        3. 保证后续写入和 UI 读取都基于同一份最新元数据
+        """
+        self.current_title = metadata.custom_title
+        self.current_tag = metadata.tag
+        self.current_agent_name = metadata.agent_name
+        self.current_agent_color = metadata.agent_color
+        self.current_mode = metadata.mode
+        self.current_last_prompt = metadata.last_prompt
+
+    def _select_leaf_uuid(
+        self,
+        loaded: LoadedSession,
+        leaf_uuid: str | None,
+    ) -> str | None:
+        """
+        选择要恢复的对话叶子节点。
+
+        [Workflow]
+        1. 如果调用方指定 leaf_uuid，直接使用该分支
+        2. 未指定时，从 LoadedSession.leaf_uuids 中找时间戳最新的叶子
+        3. 如果叶子集合与消息列表不一致，退回 leaf_uuids 的最后一项
+        """
+        if leaf_uuid or not loaded.leaf_uuids:
+            return leaf_uuid
+
+        leaf_uuid_set = set(loaded.leaf_uuids)
+        leaf_messages = [
+            msg for msg in loaded.messages
+            if msg.uuid in leaf_uuid_set
+        ]
+        if leaf_messages:
+            return max(leaf_messages, key=lambda msg: msg.timestamp or "").uuid
+        return loaded.leaf_uuids[-1]
+
+    def _build_current_chain(
+        self,
+        loaded: LoadedSession,
+        leaf_uuid: str | None,
+    ) -> list[TranscriptMessage]:
+        """
+        从 LoadedSession 中取出当前应该展示的消息链。
+
+        [Workflow]
+        1. 先确定目标叶子节点
+        2. 有目标叶子时按 parent_uuid 回溯当前分支
+        3. 没有叶子时返回完整消息列表，兼容无分支的旧会话
+        """
+        target_leaf_uuid = self._select_leaf_uuid(loaded, leaf_uuid)
+        if target_leaf_uuid:
+            return build_conversation_chain(loaded.messages, target_leaf_uuid)
+        return loaded.messages
+
+    def _refresh_snapshot_messages_from_transcript(self, leaf_uuid: str | None = None) -> None:
         """根据 transcript 当前叶子链重建 snapshot 消息视图。"""
         loaded = load_session(self.session_id, self.cwd)
         if not loaded:
@@ -236,27 +306,21 @@ class SessionStorage:
             if not loaded:
                 return
 
-        target_leaf_uuid = leaf_uuid
-        if not target_leaf_uuid and loaded.leaf_uuids:
-            leaf_messages = [
-                msg for msg in loaded.messages
-                if msg.uuid in loaded.leaf_uuids
-            ]
-            if leaf_messages:
-                latest_leaf = max(
-                    leaf_messages,
-                    key=lambda msg: msg.timestamp or "",
-                )
-                target_leaf_uuid = latest_leaf.uuid
-            else:
-                target_leaf_uuid = loaded.leaf_uuids[-1]
-
-        chain = build_conversation_chain(loaded.messages, target_leaf_uuid) if target_leaf_uuid else loaded.messages
+        chain = self._build_current_chain(loaded, leaf_uuid)
         self._snapshot_messages = [msg.model_dump() for msg in chain]
 
-    def load_messages(self, leaf_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
+    def load_messages(self, leaf_uuid: str | None = None) -> list[dict[str, Any]]:
         """
-        加载会话消息历史
+        加载会话消息历史。
+
+        [Workflow]
+        1. 读取当前会话的事件日志，并记录最新 event_id，用于判断快照是否过期。
+        2. 未指定 leaf_uuid 时，优先读取 snapshot；如果 snapshot 的 last_event_id 与最新事件一致，
+           直接恢复 snapshot.messages，并同步已记录消息 UUID 与会话元数据。
+        3. snapshot 不可用或已过期时，重放 .events.jsonl；从事件中重建消息、元数据和叶子节点集合。
+        4. 对事件日志重建出的 LoadedSession，按 leaf_uuid 或最新叶子节点构建当前对话链。
+        5. 如果事件日志无法恢复，则回退读取旧版 transcript JSONL，并用同样的叶子链算法恢复当前分支。
+        6. 三种来源都没有可用数据时返回空列表。
 
         Args:
             leaf_uuid: 指定恢复的叶子节点；为空时自动选择最新叶子链路
@@ -264,7 +328,7 @@ class SessionStorage:
         Returns:
             恢复后的消息列表（dict 格式）
         """
-        events = self.load_events() if leaf_uuid is None else self.load_events()
+        events = self.load_events()
         latest_event_id = events[-1].event_id if events else None
         snapshot = self.load_snapshot() if leaf_uuid is None else None
         if (
@@ -278,67 +342,25 @@ class SessionStorage:
                 for message in self._snapshot_messages
                 if isinstance(message, dict) and message.get("uuid")
             }
-            self.current_title = snapshot.metadata.custom_title
-            self.current_tag = snapshot.metadata.tag
-            self.current_agent_name = snapshot.metadata.agent_name
-            self.current_agent_color = snapshot.metadata.agent_color
-            self.current_mode = snapshot.metadata.mode
-            self.current_last_prompt = snapshot.metadata.last_prompt
+            self._apply_loaded_metadata(snapshot.metadata)
             if self._snapshot_messages:
                 return [dict(message) for message in self._snapshot_messages]
 
         events_loaded = load_session_from_events(self.session_id, events)
         if events_loaded is not None:
-            target_leaf_uuid = leaf_uuid
-            if not target_leaf_uuid and events_loaded.leaf_uuids:
-                leaf_messages = [
-                    msg for msg in events_loaded.messages
-                    if msg.uuid in events_loaded.leaf_uuids
-                ]
-                if leaf_messages:
-                    latest_leaf = max(leaf_messages, key=lambda msg: msg.timestamp or "")
-                    target_leaf_uuid = latest_leaf.uuid
-                else:
-                    target_leaf_uuid = events_loaded.leaf_uuids[-1]
-
-            chain = build_conversation_chain(events_loaded.messages, target_leaf_uuid) if target_leaf_uuid else events_loaded.messages
+            chain = self._build_current_chain(events_loaded, leaf_uuid)
             restored_messages = [msg.model_dump() for msg in chain]
             self._snapshot_messages = [dict(message) for message in restored_messages]
             self.recorded_message_uuids = {msg.uuid for msg in events_loaded.messages}
-            self.current_title = events_loaded.metadata.custom_title
-            self.current_tag = events_loaded.metadata.tag
-            self.current_agent_name = events_loaded.metadata.agent_name
-            self.current_agent_color = events_loaded.metadata.agent_color
-            self.current_mode = events_loaded.metadata.mode
-            self.current_last_prompt = events_loaded.metadata.last_prompt
+            self._apply_loaded_metadata(events_loaded.metadata)
             return restored_messages
 
         loaded = load_session(self.session_id, self.cwd)
         if not loaded:
             return []
 
-        target_leaf_uuid = leaf_uuid
-        if not target_leaf_uuid and loaded.leaf_uuids:
-            # 在叶子节点中选择时间戳最新的
-            leaf_messages = [
-                msg for msg in loaded.messages
-                if msg.uuid in loaded.leaf_uuids
-            ]
-            if leaf_messages:
-                latest_leaf = max(
-                    leaf_messages,
-                    key=lambda msg: msg.timestamp or "",
-                )
-                target_leaf_uuid = latest_leaf.uuid
-            else:
-                target_leaf_uuid = loaded.leaf_uuids[-1]
-
-        if target_leaf_uuid:
-            chain = build_conversation_chain(loaded.messages, target_leaf_uuid)
-        else:
-            chain = loaded.messages
-
-        restored_messages: List[Dict[str, Any]] = []
+        chain = self._build_current_chain(loaded, leaf_uuid)
+        restored_messages: list[dict[str, Any]] = []
         self.recorded_message_uuids.clear()
 
         for msg in chain:
@@ -347,16 +369,11 @@ class SessionStorage:
             self.recorded_message_uuids.add(msg.uuid)
         self._snapshot_messages = [dict(message) for message in restored_messages]
 
-        self.current_title = loaded.metadata.custom_title
-        self.current_tag = loaded.metadata.tag
-        self.current_agent_name = loaded.metadata.agent_name
-        self.current_agent_color = loaded.metadata.agent_color
-        self.current_mode = loaded.metadata.mode
-        self.current_last_prompt = loaded.metadata.last_prompt
+        self._apply_loaded_metadata(loaded.metadata)
 
         return restored_messages
 
-    def should_materialize(self, messages: List[Dict[str, Any]]) -> bool:
+    def should_materialize(self, messages: list[dict[str, Any]]) -> bool:
         """
         检查是否应该创建会话文件
 
@@ -472,11 +489,11 @@ class SessionStorage:
     def append_event(
         self,
         event_type: str,
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
         *,
-        event_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        created_at: Optional[str] = None,
+        event_id: str | None = None,
+        agent_id: str | None = None,
+        created_at: str | None = None,
     ) -> SessionEvent:
         """追加运行时事件到 append-only event log。"""
         self.event_log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -492,7 +509,7 @@ class SessionStorage:
             f.write(json.dumps(event.model_dump(), ensure_ascii=False) + "\n")
         return event
 
-    def record_runtime_event(self, event: Dict[str, Any]) -> Optional[SessionEvent]:
+    def record_runtime_event(self, event: dict[str, Any]) -> SessionEvent | None:
         """记录规范化后的运行时事件，供审计与恢复使用。"""
         if not isinstance(event, dict) or "type" not in event:
             return None
@@ -505,11 +522,23 @@ class SessionStorage:
             self.save_snapshot()
         return entry
 
-    def _load_events_from_disk(self) -> List[SessionEvent]:
-        events: List[SessionEvent] = []
+    def _load_events_from_disk(self) -> list[SessionEvent]:
+        """
+        从磁盘事件日志文件加载所有事件记录。
+
+        [Workflow]
+        1. 检查事件日志文件是否存在
+        2. 逐行读取 JSONL 文件
+        3. 用 SessionEvent.model_validate_json 解析每行
+        4. 跳过解析失败的行
+
+        返回:
+            List[SessionEvent]: 事件列表，文件不存在时返回空列表
+        """
+        events: list[SessionEvent] = []
         if not self.event_log_file.exists():
             return events
-        with open(self.event_log_file, "r", encoding="utf-8") as f:
+        with open(self.event_log_file, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -520,7 +549,7 @@ class SessionStorage:
                     continue
         return events
 
-    def load_events(self) -> List[SessionEvent]:
+    def load_events(self) -> list[SessionEvent]:
         """加载当前会话的事件日志。"""
         return self._load_events_from_disk()
 
@@ -577,17 +606,17 @@ class SessionStorage:
             json.dump(snapshot.model_dump(), f, ensure_ascii=False, indent=2)
         return snapshot
 
-    def load_snapshot(self) -> Optional[SessionSnapshot]:
+    def load_snapshot(self) -> SessionSnapshot | None:
         """读取当前 snapshot；不存在或损坏时返回 None。"""
         if not self.snapshot_file.exists():
             return None
-        with open(self.snapshot_file, "r", encoding="utf-8") as f:
+        with open(self.snapshot_file, encoding="utf-8") as f:
             payload = json.load(f)
         if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
             payload["messages"] = [msg for msg in payload["messages"] if isinstance(msg, dict) and msg.get("uuid")]
         return SessionSnapshot.model_validate(payload)
 
-    def load_runtime_state(self) -> Dict[str, Any]:
+    def load_runtime_state(self) -> dict[str, Any]:
         """加载派生的运行时状态（todo/checkpoint/agent replay 等）。"""
         events = self.load_events()
         latest_event_id = events[-1].event_id if events else None
@@ -603,18 +632,18 @@ class SessionStorage:
 
     async def record_message(
         self,
-        message: Dict[str, Any],
-        parent_uuid: Optional[str] = None,
-    ) -> Optional[str]:
+        message: dict[str, Any],
+        parent_uuid: str | None = None,
+    ) -> str | None:
         """Compatibility async wrapper for recording a single message."""
         effective_parent = parent_uuid if parent_uuid is not None else self._last_parent_uuid
         return self.record_messages([message], parent_uuid=effective_parent)
 
     async def insert_message_chain(
         self,
-        messages: List[Dict[str, Any]],
-        starting_parent_uuid: Optional[str] = None,
-    ) -> Optional[str]:
+        messages: list[dict[str, Any]],
+        starting_parent_uuid: str | None = None,
+    ) -> str | None:
         """Compatibility async wrapper matching the legacy SessionStorage API."""
         effective_parent = (
             starting_parent_uuid if starting_parent_uuid is not None else self._last_parent_uuid
@@ -623,9 +652,9 @@ class SessionStorage:
 
     def record_messages(
         self,
-        messages: List[Dict[str, Any]],
-        parent_uuid: Optional[str] = None,
-    ) -> Optional[str]:
+        messages: list[dict[str, Any]],
+        parent_uuid: str | None = None,
+    ) -> str | None:
         """
         记录消息链到会话文件
 
@@ -639,6 +668,12 @@ class SessionStorage:
         # 检查是否需要创建文件
         if self.session_file is None and self.should_materialize(messages):
             self.materialize_session_file()
+
+        # 调用方未显式传 parent_uuid 时，回退到上一次记录的 last_parent_uuid。
+        # 否则 query loop 里 record_messages([assistant_message]) 这种调用每次都从 None
+        # 起头，assistant 消息会全部成为 root，conversation chain 被切碎。
+        if parent_uuid is None:
+            parent_uuid = self._last_parent_uuid
 
         # 过滤出新消息
         new_messages = []
@@ -686,9 +721,9 @@ class SessionStorage:
 
     def _insert_message_chain(
         self,
-        messages: List[Dict[str, Any]],
-        parent_uuid: Optional[str],
-    ) -> Optional[str]:
+        messages: list[dict[str, Any]],
+        parent_uuid: str | None,
+    ) -> str | None:
         """
         插入消息链
 
@@ -749,6 +784,7 @@ class SessionStorage:
         metadata_type = "custom-title" if source == "user" else "ai-title"
         entry = {
             "type": metadata_type,
+            "title": title,
             "custom_title": title,
             "source": source,
             "session_id": self.session_id,
@@ -758,7 +794,7 @@ class SessionStorage:
         self.append_event("metadata_updated", {"title": title, "source": source})
         self.save_snapshot()
 
-    def get_session_info(self) -> Dict[str, Any]:
+    def get_session_info(self) -> dict[str, Any]:
         """
         获取会话基本信息（兼容 codo/services/session.py 的接口）
 
@@ -770,7 +806,7 @@ class SessionStorage:
         Returns:
             会话信息字典
         """
-        info: Dict[str, Any] = {
+        info: dict[str, Any] = {
             "session_id": self.session_id,
             "exists": False,
             "message_count": 0,
@@ -803,7 +839,7 @@ class SessionStorage:
         # 扫描 JSONL 提取消息数和标题
         message_count = 0
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -821,11 +857,11 @@ class SessionStorage:
                                         text += "…"
                                     info["first_prompt"] = text
                         elif record_type == "custom-title":
-                            title = record.get("custom_title")
+                            title = record.get("custom_title") or record.get("title")
                             if title:
                                 info["user_title"] = title
                         elif record_type == "ai-title":
-                            title = record.get("custom_title")
+                            title = record.get("custom_title") or record.get("title")
                             if title:
                                 info["ai_title"] = title
                     except Exception:
@@ -836,7 +872,7 @@ class SessionStorage:
         info["message_count"] = message_count
         return info
 
-    async def load_metadata(self) -> Dict[str, Any]:
+    async def load_metadata(self) -> dict[str, Any]:
         """
         加载会话元数据（兼容 codo/services/session.py 的接口）
 
@@ -852,7 +888,7 @@ class SessionStorage:
             "mode": self.current_mode,
         }
 
-    def save_metadata(self, metadata_type: str, data: Dict[str, Any]) -> None:
+    def save_metadata(self, metadata_type: str, data: dict[str, Any]) -> None:
         """通用元数据写入。"""
         self._ensure_transcript_materialized()
         entry = {
@@ -911,15 +947,31 @@ class SessionStorage:
         self.save_snapshot()
 
     def save_agent_setting(self, agent_setting: str) -> None:
+        """保存代理设置（agent_setting 和 agent_type 字段）。"""
         self.save_metadata("agent-setting", {"agent_setting": agent_setting, "agent_type": agent_setting})
 
-    def save_summary(self, summary: str, leaf_uuid: Optional[str] = None) -> None:
-        payload: Dict[str, Any] = {"summary": summary}
+    def save_summary(self, summary: str, leaf_uuid: str | None = None) -> None:
+        """
+        保存会话摘要文本。
+
+        参数:
+            summary: 摘要文本
+            leaf_uuid: 可选的叶节点 UUID（用于关联摘要到特定消息分支）
+        """
+        payload: dict[str, Any] = {"summary": summary}
         if leaf_uuid:
             payload["leaf_uuid"] = leaf_uuid
         self.save_metadata("summary", payload)
 
     def save_pr_link(self, pr_number: int, pr_url: str, pr_repository: str) -> None:
+        """
+        保存关联的 PR 链接信息。
+
+        参数:
+            pr_number: PR 编号
+            pr_url: PR URL
+            pr_repository: 仓库名称
+        """
         self.save_metadata(
             "pr-link",
             {
@@ -929,7 +981,8 @@ class SessionStorage:
             },
         )
 
-    def save_worktree_state(self, worktree_session: Optional[Dict[str, Any]]) -> None:
+    def save_worktree_state(self, worktree_session: dict[str, Any] | None) -> None:
+        """保存 worktree 会话状态（用于多工作区场景）。"""
         self.save_metadata("worktree-state", {"worktree_session": worktree_session})
 
     def save_mode(self, mode: str) -> None:
@@ -969,8 +1022,8 @@ class SessionStorage:
 
     def record_content_replacement(
         self,
-        replacements: List[Dict[str, Any]],
-        agent_id: Optional[str] = None,
+        replacements: list[dict[str, Any]],
+        agent_id: str | None = None,
     ) -> None:
         """
         记录内容替换（工具结果截断）
@@ -1003,7 +1056,7 @@ class SessionStorage:
             self._reappend_session_metadata()
         self.save_snapshot()
 
-    def get_recorded_messages(self) -> Set[str]:
+    def get_recorded_messages(self) -> set[str]:
         """Compatibility accessor for deduplicated transcript message UUIDs."""
         return set(self.recorded_message_uuids)
 
@@ -1015,7 +1068,7 @@ class SessionStorage:
             self.event_log_file,
             self.snapshot_file,
         ]
-        seen: Set[Path] = set()
+        seen: set[Path] = set()
         for path in targets:
             if path is None:
                 continue
@@ -1030,9 +1083,18 @@ class SessionManager:
     """Compatibility manager for listing and deleting project sessions."""
 
     @staticmethod
-    def list_sessions(cwd: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_sessions(cwd: str | None = None) -> list[dict[str, Any]]:
+        """
+        列出指定工作目录下所有可用会话，按修改时间降序排列。
+
+        参数:
+            cwd: 工作目录路径，None 时使用当前目录
+
+        返回:
+            List[Dict]: 会话信息列表，每项包含 session_id、modified、message_count 等字段
+        """
         target_cwd = cwd or os.getcwd()
-        sessions: List[Dict[str, Any]] = []
+        sessions: list[dict[str, Any]] = []
         directory = get_sessions_dir(target_cwd)
         if not directory.exists():
             return []
@@ -1047,21 +1109,37 @@ class SessionManager:
         return sessions
 
     @staticmethod
-    def get_latest_session(cwd: Optional[str] = None) -> Optional[str]:
+    def get_latest_session(cwd: str | None = None) -> str | None:
+        """
+        获取最近修改的会话 ID。
+
+        参数:
+            cwd: 工作目录路径
+
+        返回:
+            str | None: 最近会话的 session_id，无会话时返回 None
+        """
         sessions = SessionManager.list_sessions(cwd)
         if sessions:
             return str(sessions[0].get("session_id") or "")
         return None
 
     @staticmethod
-    def delete_session(session_id: str, cwd: Optional[str] = None) -> None:
+    def delete_session(session_id: str, cwd: str | None = None) -> None:
+        """
+        删除指定会话的所有相关文件。
+
+        参数:
+            session_id: 要删除的会话 ID
+            cwd: 工作目录路径
+        """
         SessionStorage(session_id, cwd or os.getcwd()).delete_session()
 
 # ============================================================================
 # 会话加载
 # ============================================================================
 
-def load_session(session_id: str, cwd: str) -> Optional[LoadedSession]:
+def load_session(session_id: str, cwd: str) -> LoadedSession | None:
     """
     加载会话
 
@@ -1081,17 +1159,35 @@ def load_session(session_id: str, cwd: str) -> Optional[LoadedSession]:
 
 def load_session_from_events(
     session_id: str,
-    events: List[SessionEvent],
-) -> Optional[LoadedSession]:
+    events: list[SessionEvent],
+) -> LoadedSession | None:
+    """
+    从事件列表重建会话状态（消息历史、元数据、叶节点等）。
+
+    [Workflow]
+    1. 遍历事件列表，按 event_type 分发处理：
+       - message_recorded: 追加消息到 message_map
+       - metadata_updated: 更新 SessionMetadata 字段
+       - content_replaced: 记录内容替换操作
+    2. 根据 leaf_uuids 确定当前分支的消息列表
+    3. 返回 LoadedSession（含 messages、metadata、leaf_uuids）
+
+    参数:
+        session_id: 会话 ID
+        events: 从磁盘加载的事件列表
+
+    返回:
+        LoadedSession | None: 重建的会话状态，events 为空时返回 None
+    """
     if not events:
         return None
 
-    messages: List[TranscriptMessage] = []
-    message_map: Dict[str, TranscriptMessage] = {}
-    message_order: List[str] = []
+    messages: list[TranscriptMessage] = []
+    message_map: dict[str, TranscriptMessage] = {}
+    message_order: list[str] = []
     metadata = SessionMetadata(session_id=session_id)
-    leaf_uuids: Set[str] = set()
-    content_replacements: List[Dict[str, Any]] = []
+    leaf_uuids: set[str] = set()
+    content_replacements: list[dict[str, Any]] = []
 
     for event in events:
         payload = dict(event.payload or {})
@@ -1139,9 +1235,9 @@ def load_session_from_events(
         content_replacements=content_replacements,
     )
 
-def build_runtime_state_from_events(events: List[SessionEvent]) -> Dict[str, Any]:
+def build_runtime_state_from_events(events: list[SessionEvent]) -> dict[str, Any]:
     """从 runtime event log 派生 UI/runtime 恢复所需的状态。"""
-    runtime_state: Dict[str, Any] = {
+    runtime_state: dict[str, Any] = {
         "app_state": {"todos": {}},
         "replay_events": [],
         "permission_mode": None,
@@ -1230,13 +1326,13 @@ def load_session_from_file(
     Returns:
         加载的会话数据
     """
-    messages: List[TranscriptMessage] = []
+    messages: list[TranscriptMessage] = []
     metadata = SessionMetadata(session_id=session_id)
-    leaf_uuids: Set[str] = set()
-    content_replacements: List[Dict[str, Any]] = []
+    leaf_uuids: set[str] = set()
+    content_replacements: list[dict[str, Any]] = []
 
     # 读取 JSONL 文件
-    with open(session_file, "r", encoding="utf-8") as f:
+    with open(session_file, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -1258,7 +1354,7 @@ def load_session_from_file(
                     leaf_uuids.add(msg.uuid)
 
                 elif entry_type == "custom-title":
-                    metadata.custom_title = entry.get("custom_title")
+                    metadata.custom_title = entry.get("custom_title") or entry.get("title")
 
                 elif entry_type == "tag":
                     metadata.tag = entry.get("tag")
@@ -1280,7 +1376,7 @@ def load_session_from_file(
 
             except Exception as e:
                 # 跳过无法解析的行
-                print(f"Warning: Failed to parse session entry: {e}")
+                logger.warning("Failed to parse session entry: %s", e)
                 continue
 
     return LoadedSession(
@@ -1292,9 +1388,9 @@ def load_session_from_file(
     )
 
 def build_conversation_chain(
-    messages: List[TranscriptMessage],
-    leaf_uuid: Optional[str],
-) -> List[TranscriptMessage]:
+    messages: list[TranscriptMessage],
+    leaf_uuid: str | None,
+) -> list[TranscriptMessage]:
     """
     从叶子节点重建对话链
 
@@ -1308,19 +1404,22 @@ def build_conversation_chain(
     if not leaf_uuid:
         return []
 
-    # 构建 UUID -> Message 映射
+    # 构建 UUID -> Message 映射，后续回溯可以 O(1) 查父节点。
     message_map = {msg.uuid: msg for msg in messages}
 
-    # 从叶子节点向上追溯
-    chain: List[TranscriptMessage] = []
+    # 从叶子节点向上追溯；先 append 再 reverse，避免 insert(0) 在长会话中反复搬移列表。
+    chain: list[TranscriptMessage] = []
     current_uuid = leaf_uuid
+    visited_uuids: set[str] = set()
 
-    while current_uuid:
+    while current_uuid and current_uuid not in visited_uuids:
+        visited_uuids.add(current_uuid)
         msg = message_map.get(current_uuid)
         if not msg:
             break
 
-        chain.insert(0, msg)  # 插入到开头
+        chain.append(msg)
         current_uuid = msg.parent_uuid
 
+    chain.reverse()
     return chain

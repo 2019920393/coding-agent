@@ -14,26 +14,26 @@
 
 import json
 import os
-import pytest
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+from codo.services.tools.permissions_loader import (
+    _get_settings_file_path,
+    _load_settings_json,
+    _settings_json_to_rules,
+    add_permission_rules_to_settings,
+    build_permission_context_from_disk,
+    delete_permission_rule_from_settings,
+    load_all_permission_rules,
+    load_permission_rules_from_source,
+)
 from codo.types.permissions import (
     PermissionMode,
     PermissionRule,
     PermissionRuleSource,
     PermissionRuleValue,
-)
-from codo.services.tools.permissions_loader import (
-    _get_settings_file_path,
-    _load_settings_json,
-    _settings_json_to_rules,
-    load_permission_rules_from_source,
-    load_all_permission_rules,
-    build_permission_context_from_disk,
-    add_permission_rules_to_settings,
-    delete_permission_rule_from_settings,
 )
 
 # ============================================================================
@@ -322,7 +322,7 @@ class TestAddPermissionRulesToSettings:
 
         assert result is True
         # 验证文件内容
-        with open(tmp_path / ".codo" / "settings.json", 'r') as f:
+        with open(tmp_path / ".codo" / "settings.json") as f:
             data = json.load(f)
         assert "Bash" in data["permissions"]["allow"]
 
@@ -347,7 +347,7 @@ class TestAddPermissionRulesToSettings:
             )
 
         assert result is True
-        with open(settings_file, 'r') as f:
+        with open(settings_file) as f:
             data = json.load(f)
         assert "Read" in data["permissions"]["allow"]
         assert "Bash" in data["permissions"]["allow"]
@@ -373,7 +373,7 @@ class TestAddPermissionRulesToSettings:
             )
 
         assert result is True
-        with open(settings_file, 'r') as f:
+        with open(settings_file) as f:
             data = json.load(f)
         assert data["permissions"]["allow"].count("Bash") == 1
 
@@ -424,7 +424,7 @@ class TestDeletePermissionRuleFromSettings:
             result = delete_permission_rule_from_settings(rule, str(tmp_path))
 
         assert result is True
-        with open(settings_file, 'r') as f:
+        with open(settings_file) as f:
             data = json.load(f)
         assert "Bash" not in data["permissions"]["allow"]
         assert "Read" in data["permissions"]["allow"]

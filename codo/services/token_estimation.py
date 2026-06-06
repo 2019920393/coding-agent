@@ -10,15 +10,16 @@ Token 估算服务 - 粗略估算消息的 token 数量
 """
 
 import json
+from typing import Any
 
-from typing import Any, Dict, List
+from codo.constants import DEFAULT_MODEL
 
 # 平均每个 token 的字符数（保守估计）
-CHARS_PER_TOKEN = 1.5
+CHARS_PER_TOKEN = 3.5
 
 # 已知模型的上下文窗口大小
 CONTEXT_WINDOWS = {
-    "claude-opus-4-20250514": 200_000,
+    DEFAULT_MODEL: 200_000,
     "claude-sonnet-4-20250514": 200_000,
     "claude-haiku-3-5-20241022": 200_000,
     "claude-sonnet-3-5-20241022": 200_000,
@@ -28,7 +29,7 @@ CONTEXT_WINDOWS = {
 
 # 已知模型的最大输出 token 数
 MAX_OUTPUT_TOKENS = {
-    "claude-opus-4-20250514": 16_384,
+    DEFAULT_MODEL: 16_384,
     "claude-sonnet-4-20250514": 16_384,
     "claude-haiku-3-5-20241022": 8_192,
     "claude-sonnet-3-5-20241022": 8_192,
@@ -99,7 +100,7 @@ def estimate_content_tokens(content: Any) -> int:
     # 兜底：序列化为 JSON
     return estimate_token_count(json.dumps(content, ensure_ascii=False))
 
-def estimate_messages_tokens(messages: List[Dict[str, Any]]) -> int:
+def estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:
     """估算消息列表的总 token 数量
 
     - roughTokenCountEstimationForMessages()
@@ -147,6 +148,12 @@ class TokenBudget:
     MANUAL_COMPACT_BUFFER_TOKENS = 3_000
 
     def __init__(self, model: str):
+        """
+        初始化 TokenBudget。
+
+        参数:
+            model: 模型名称，用于查找上下文窗口和最大输出 token 配置
+        """
         self.model = model
         self.context_window = get_context_window(model)  # 模型的上下文窗口大小
         self.max_output = get_max_output_tokens(model)   # 模型的最大输出 token
@@ -175,7 +182,7 @@ class TokenBudget:
         """判断是否达到阻塞限制（必须压缩）"""
         return token_count >= self.blocking_limit
 
-    def get_usage_stats(self, token_count: int) -> Dict[str, Any]:
+    def get_usage_stats(self, token_count: int) -> dict[str, Any]:
         """获取 token 使用统计信息
 
         返回字典包含：

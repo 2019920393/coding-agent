@@ -38,6 +38,8 @@ env/
 
 # User data
 .codo/
+codo/evals/results/*
+!codo/evals/results/.gitignore
 
 # OS
 .DS_Store

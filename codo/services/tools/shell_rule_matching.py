@@ -9,9 +9,9 @@ Shell 规则匹配工具
 5. 提供权限建议生成函数
 """
 
-import re
 import logging
-from typing import Dict, Optional, List, Any, Union
+import re
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,17 +37,13 @@ ESCAPED_BACKSLASH_PLACEHOLDER_RE = re.compile(re.escape(ESCAPED_BACKSLASH_PLACEH
 
 # 使用 TypedDict 风格的字典表示解析后的规则
 
-# type: "exact" | "prefix" | "wildcard"
-# exact: {"type": "exact", "command": str}
-# prefix: {"type": "prefix", "prefix": str}
-# wildcard: {"type": "wildcard", "pattern": str}
-ShellPermissionRule = Dict[str, str]
+ShellPermissionRule = dict[str, str]
 
 # ============================================================================
 # 前缀提取（Legacy :* 语法）
 # ============================================================================
 
-def permission_rule_extract_prefix(permission_rule: str) -> Optional[str]:
+def permission_rule_extract_prefix(permission_rule: str) -> str | None:
     """
     从 legacy :* 语法中提取前缀
 
@@ -271,7 +267,7 @@ def parse_permission_rule(permission_rule: str) -> ShellPermissionRule:
 def suggestion_for_exact_command(
     tool_name: str,
     command: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     为精确命令匹配生成权限更新建议
 
@@ -305,7 +301,7 @@ def suggestion_for_exact_command(
 def suggestion_for_prefix(
     tool_name: str,
     prefix: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     为前缀匹配生成权限更新建议
 

@@ -5,8 +5,9 @@ AgentTool 输入/输出类型定义
 - agentToolUtils.ts agentToolResultSchema (line 227-260)
 """
 
+
 from pydantic import BaseModel, Field
-from typing import Optional
+
 
 class AgentToolInput(BaseModel):
     """AgentTool 输入 schema
@@ -21,11 +22,11 @@ class AgentToolInput(BaseModel):
     prompt: str = Field(
         description="The task for the agent to perform"
     )# 这个主要是实际的工作内容 给子agent的工作内容
-    subagent_type: Optional[str] = Field(  # Optional[str]可选不是必须传值
+    subagent_type: str | None = Field(  # Optional[str]可选不是必须传值
         default=None,
         description="The type of specialized agent to use for this task"
     )
-    run_in_background: Optional[bool] = Field(
+    run_in_background: bool | None = Field(
         default=False,
         description="Whether to run this agent in the background and continue the main conversation immediately"
     ) # 让agent 后台执行 主agent可以继续执行
@@ -41,5 +42,5 @@ class AgentToolOutput(BaseModel):
     input_tokens: int = Field(default=0)
     output_tokens: int = Field(default=0)
     background: bool = Field(default=False) #这三个字段后台agent才有意义
-    task_id: Optional[str] = Field(default=None)  #关联后台任务的  标记任务完成  用户可以取消任务  后台发出的是所有事件通过id路由到正确的任务面板
-    status: Optional[str] = Field(default=None)
+    task_id: str | None = Field(default=None)  #关联后台任务的  标记任务完成  用户可以取消任务  后台发出的是所有事件通过id路由到正确的任务面板
+    status: str | None = Field(default=None)

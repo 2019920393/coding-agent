@@ -5,10 +5,9 @@
 """
 
 from dataclasses import dataclass
-from typing import Literal, Optional, Dict, Any, List, Union
+from typing import Any, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
-from datetime import datetime
-from uuid import UUID
 
 # ============================================================================
 # 会话状态枚举
@@ -26,72 +25,72 @@ class TranscriptMessage(BaseModel):
 
     type: Literal["user", "assistant"]
     uuid: str
-    parent_uuid: Optional[str] = None
-    content: Union[str, List[Dict[str, Any]]]
-    timestamp: Optional[str] = None
-    model: Optional[str] = None
+    parent_uuid: str | None = None
+    content: str | list[dict[str, Any]]
+    timestamp: str | None = None
+    model: str | None = None
 
 class CustomTitleEntry(BaseModel):
     """自定义标题条目"""
     type: Literal["custom-title"] = "custom-title"
     custom_title: str
     session_id: str
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
 
 class TagEntry(BaseModel):
     """标签条目"""
     type: Literal["tag"] = "tag"
     tag: str
     session_id: str
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
 
 class AgentNameEntry(BaseModel):
     """代理名称条目"""
     type: Literal["agent-name"] = "agent-name"
     agent_name: str
     session_id: str
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
 
 class AgentColorEntry(BaseModel):
     """代理颜色条目"""
     type: Literal["agent-color"] = "agent-color"
     agent_color: str
     session_id: str
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
 
 class ModeEntry(BaseModel):
     """模式条目"""
     type: Literal["mode"] = "mode"
     mode: str
     session_id: str
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
 
 class LastPromptEntry(BaseModel):
     """最后提示词条目"""
     type: Literal["last-prompt"] = "last-prompt"
     last_prompt: str
     session_id: str
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
 
 class ContentReplacementEntry(BaseModel):
     """内容替换条目（用于工具结果截断记录）"""
     type: Literal["content-replacement"] = "content-replacement"
-    replacements: List[Dict[str, Any]]
-    agent_id: Optional[str] = None
+    replacements: list[dict[str, Any]]
+    agent_id: str | None = None
     session_id: str
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
 
 # 所有 Entry 类型的联合
-TranscriptEntry = Union[
-    TranscriptMessage,
-    CustomTitleEntry,
-    TagEntry,
-    AgentNameEntry,
-    AgentColorEntry,
-    ModeEntry,
-    LastPromptEntry,
-    ContentReplacementEntry,
-]
+TranscriptEntry = (
+    TranscriptMessage
+    | CustomTitleEntry
+    | TagEntry
+    | AgentNameEntry
+    | AgentColorEntry
+    | ModeEntry
+    | LastPromptEntry
+    | ContentReplacementEntry
+)
 
 # ============================================================================
 # 会话元数据
@@ -100,14 +99,14 @@ TranscriptEntry = Union[
 class SessionMetadata(BaseModel):
     """会话元数据"""
     session_id: str
-    custom_title: Optional[str] = None
-    tag: Optional[str] = None
-    agent_name: Optional[str] = None
-    agent_color: Optional[str] = None
-    mode: Optional[str] = None
-    last_prompt: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    custom_title: str | None = None
+    tag: str | None = None
+    agent_name: str | None = None
+    agent_color: str | None = None
+    mode: str | None = None
+    last_prompt: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 # ============================================================================
 # 会话加载结果
@@ -118,10 +117,10 @@ class LoadedSession(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     session_id: str
-    messages: List[TranscriptMessage]
+    messages: list[TranscriptMessage]
     metadata: SessionMetadata
-    leaf_uuids: List[str] = Field(default_factory=list)
-    content_replacements: List[Dict[str, Any]] = Field(default_factory=list)
+    leaf_uuids: list[str] = Field(default_factory=list)
+    content_replacements: list[dict[str, Any]] = Field(default_factory=list)
  #记录被截断/替换的内容。
 # ============================================================================
 # 会话外部元数据（用于 UI/API）
@@ -131,9 +130,9 @@ class SessionExternalMetadata(BaseModel):
     """会话外部元数据（用于 UI/API 层）"""
     model_config = ConfigDict(extra="allow")
 
-    permission_mode: Optional[str] = None
-    model: Optional[str] = None
-    task_summary: Optional[str] = None
+    permission_mode: str | None = None
+    model: str | None = None
+    task_summary: str | None = None
 
 # ============================================================================
 # 会话列表/恢复元数据
@@ -151,10 +150,10 @@ class SessionInfo:
     summary: str
     last_modified: float
     file_size: int
-    custom_title: Optional[str] = None
-    first_prompt: Optional[str] = None
-    cwd: Optional[str] = None
-    created_at: Optional[float] = None
+    custom_title: str | None = None
+    first_prompt: str | None = None
+    cwd: str | None = None
+    created_at: float | None = None
 
     def __post_init__(self) -> None:
         """确保 summary 总有可用值。"""
@@ -178,9 +177,9 @@ class SessionEvent(BaseModel):
     event_id: str
     session_id: str
     event_type: str
-    payload: Dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
     created_at: str
-    agent_id: Optional[str] = None
+    agent_id: str | None = None
 
 class SessionSnapshot(BaseModel):
     """Materialized session snapshot derived from event log."""
@@ -188,9 +187,9 @@ class SessionSnapshot(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     session_id: str
-    messages: List[Dict[str, Any]] = Field(default_factory=list)
-    runtime_state: Dict[str, Any] = Field(default_factory=dict)
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    runtime_state: dict[str, Any] = Field(default_factory=dict)
     metadata: SessionMetadata
-    last_event_id: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    last_event_id: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None

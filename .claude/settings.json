@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m codo.desktop)",
+      "Read(//c/Users/tzm/.codo/sessions/C_Users_tzm_Desktop_project_learn_xiaoshuo/**)",
+      "Bash(python -c ' *)",
+      "Bash(npm run *)",
+      "WebSearch",
+      "Bash(xargs grep -l \"default_headers\")",
+      "Bash(grep -oP '\"text\":\".*?美化.*?\"' \"C:\\\\Users\\\\tzm\\\\.claude\\\\projects\\\\c--Users-tzm-Desktop-test-Codo-new\\\\b96a4185-14ad-48a5-ab1c-631308442d8c.jsonl\" | tail -10)",
+      "Read(//c/Users/tzm/.claude/projects/c--Users-tzm-Desktop-test-Codo-new/**)",
+      "Bash(python -m pytest tests/tools/bash_tool/test_process_protection.py -v)"
+    ]
+  }
+}

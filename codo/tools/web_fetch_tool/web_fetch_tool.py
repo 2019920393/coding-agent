@@ -1,26 +1,29 @@
 """WebFetchTool 实现"""
 import time
-from typing import Dict, Any
-from ..base import Tool, ToolUseContext
-from ..types import ToolResult, ValidationResult
+from typing import Any
+
 from codo.types.permissions import (
     PermissionAllowDecision,
     PermissionResult,
     create_allow_decision,
     create_passthrough_result,
 )
-from .types import WebFetchInput, WebFetchOutput
-from .prompt import PROMPT, DESCRIPTION
+
+from ..base import Tool
+from ..types import ToolResult, ValidationResult
 from .constants import WEB_FETCH_TOOL_NAME
 from .preapproved import is_preapproved_domain
+from .prompt import DESCRIPTION, PROMPT
+from .types import WebFetchInput, WebFetchOutput
 from .utils import (
-    validate_url,
+    convert_html_to_markdown,
     fetch_url_with_redirects,
     get_cached_fetch,
-    set_cached_fetch,
-    convert_html_to_markdown,
     process_content_with_prompt,
+    set_cached_fetch,
+    validate_url,
 )
+
 
 class WebFetchTool(Tool[WebFetchInput, WebFetchOutput, None]):
     """
@@ -44,11 +47,11 @@ class WebFetchTool(Tool[WebFetchInput, WebFetchOutput, None]):
         """返回输出 schema 类 WebFetchOutput。"""
         return WebFetchOutput
 
-    async def description(self, input_data: WebFetchInput, options: Dict[str, Any]) -> str:
+    async def description(self, input_data: WebFetchInput, options: dict[str, Any]) -> str:
         """返回工具简短描述。"""
         return DESCRIPTION
 
-    async def prompt(self, options: Dict[str, Any]) -> str:
+    async def prompt(self, options: dict[str, Any]) -> str:
         """返回系统提示词中的工具描述。"""
         return PROMPT
 
@@ -63,7 +66,7 @@ class WebFetchTool(Tool[WebFetchInput, WebFetchOutput, None]):
     async def check_permissions(
         self,
         args: WebFetchInput,
-        context: ToolUseContext
+        context: dict[str, Any]
     ) -> PermissionAllowDecision | PermissionResult:
         """检查权限：预批准域名自动允许"""
         if is_preapproved_domain(args.url):
@@ -75,7 +78,7 @@ class WebFetchTool(Tool[WebFetchInput, WebFetchOutput, None]):
     async def validate_input(
         self,
         args: WebFetchInput,
-        context: ToolUseContext
+        context: dict[str, Any]
     ) -> ValidationResult:
         """验证输入参数"""
         # 验证 URL
@@ -92,7 +95,7 @@ class WebFetchTool(Tool[WebFetchInput, WebFetchOutput, None]):
     async def call(
         self,
         args: WebFetchInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool,
         parent_message,
         on_progress=None
@@ -106,7 +109,7 @@ class WebFetchTool(Tool[WebFetchInput, WebFetchOutput, None]):
             return ToolResult(error=error_msg)
 
         # 获取 API 客户端
-        options = context.get_options()
+        options = context.get("options", {})
         api_client = options.get("api_client")
         if not api_client:
             return ToolResult(error="API client not available")
@@ -174,7 +177,7 @@ class WebFetchTool(Tool[WebFetchInput, WebFetchOutput, None]):
         self,
         content: WebFetchOutput,
         tool_use_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """将工具结果映射为 API 响应格式"""
         return {
             "type": "tool_result",

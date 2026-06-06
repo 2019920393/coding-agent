@@ -26,10 +26,9 @@ CODO.md 多位置支持和 @include 指令处理
 
 import os
 import re
-from pathlib import Path
-from typing import List, Set, Optional
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
+from pathlib import Path
 
 from codo.utils.diagnostics import log_info
 
@@ -41,9 +40,9 @@ class MemoryFileInfo:
     path: str
     type: str  # 'User', 'Project', 'Local'
     content: str
-    parent: Optional[str] = None
+    parent: str | None = None
 
-def extract_include_paths(content: str, base_path: str) -> List[str]:
+def extract_include_paths(content: str, base_path: str) -> list[str]:
     """
     从内容中提取 @include 路径
 
@@ -117,10 +116,10 @@ def extract_include_paths(content: str, base_path: str) -> List[str]:
 def process_memory_file(
     file_path: str,
     type: str,
-    processed_paths: Set[str],
+    processed_paths: set[str],
     depth: int = 0,
-    parent: Optional[str] = None
-) -> List[MemoryFileInfo]:
+    parent: str | None = None
+) -> list[MemoryFileInfo]:
     """
     递归处理内存文件（包含 @include）
 
@@ -145,7 +144,7 @@ def process_memory_file(
 
     # 3. 读取文件
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             content = f.read().strip()
     except Exception:
         return []
@@ -179,7 +178,7 @@ def process_memory_file(
 
     return result
 
-def get_ancestor_dirs(cwd: str) -> List[str]:
+def get_ancestor_dirs(cwd: str) -> list[str]:
     """
     获取从根目录到 cwd 的所有祖先目录
 
@@ -205,8 +204,8 @@ def get_ancestor_dirs(cwd: str) -> List[str]:
 def process_md_rules(
     rules_dir: str,
     type: str,
-    processed_paths: Set[str]
-) -> List[MemoryFileInfo]:
+    processed_paths: set[str]
+) -> list[MemoryFileInfo]:
     """
     处理 rules 目录下的所有 .md 文件
 
@@ -236,7 +235,7 @@ def process_md_rules(
 
     return result
 
-def get_memory_files(cwd: str) -> List[MemoryFileInfo]:
+def get_memory_files(cwd: str) -> list[MemoryFileInfo]:
     """
     获取所有内存文件（CODO.md 和 rules）
 
@@ -313,7 +312,7 @@ def get_memory_files(cwd: str) -> List[MemoryFileInfo]:
 
     return result
 
-def get_codo_mds(cwd: str) -> Optional[str]:
+def get_codo_mds(cwd: str) -> str | None:
     """
     获取合并后的 CODO.md 内容
 

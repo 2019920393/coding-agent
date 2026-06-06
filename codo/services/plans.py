@@ -4,18 +4,36 @@ Plan 文件管理模块
 本模块负责管理 Plan 文件的创建、读取、保存和路径管理。
 """
 
-import os
+import logging
 import random
 from pathlib import Path
-from typing import Optional, Dict
 
-from codo.utils.config import get_user_dir
+from codo.utils.config import get_merged_config, get_user_dir
+
+logger = logging.getLogger(__name__)
 
 # 全局缓存：session_id -> plan_slug
-_plan_slug_cache: Dict[str, str] = {}
+_plan_slug_cache: dict[str, str] = {}
 
 # 最大重试次数（避免 slug 冲突）
 MAX_SLUG_RETRIES = 10
+
+
+def _resolve_configured_plans_directory(cwd: Path) -> Path | None:
+    configured = get_merged_config(str(cwd)).get("plansDirectory")
+    if configured is None:
+        return None
+    if not isinstance(configured, str):
+        logger.warning("plansDirectory must be a string; using default plans directory")
+        return None
+    configured = configured.strip()
+    if not configured:
+        return None
+
+    configured_path = Path(configured).expanduser()
+    if configured_path.is_absolute():
+        return configured_path
+    return cwd / configured_path
 
 def generate_word_slug() -> str:
     """
@@ -48,7 +66,7 @@ def generate_word_slug() -> str:
 
     return f"{adj1}-{adj2}-{noun}"
 
-def get_plans_directory() -> Path:
+def get_plans_directory(cwd: str | Path | None = None) -> Path:
     """
     获取 Plans 目录路径
 
@@ -61,9 +79,10 @@ def get_plans_directory() -> Path:
     Returns:
         Path: Plans 目录路径
     """
-    # TODO: 从 settings.json 读取配置
-    # 目前使用默认路径
-    plans_path = get_user_dir() / "plans"
+    project_root = Path(cwd).expanduser().resolve() if cwd is not None else Path.cwd()
+    plans_path = _resolve_configured_plans_directory(project_root)
+    if plans_path is None:
+        plans_path = get_user_dir() / "plans"
 
     # 确保目录存在
     plans_path.mkdir(parents=True, exist_ok=True)
@@ -132,7 +151,7 @@ def clear_all_plan_slugs() -> None:
     """
     _plan_slug_cache.clear()
 
-def get_plan_file_path(session_id: str, agent_id: Optional[str] = None) -> Path:
+def get_plan_file_path(session_id: str, agent_id: str | None = None) -> Path:
     """
     获取会话的 plan 文件路径
 
@@ -158,7 +177,7 @@ def get_plan_file_path(session_id: str, agent_id: Optional[str] = None) -> Path:
         # 子 agent
         return plans_dir / f"{slug}-agent-{agent_id}.md"
 
-def get_plan(session_id: str, agent_id: Optional[str] = None) -> Optional[str]:
+def get_plan(session_id: str, agent_id: str | None = None) -> str | None:
     """
     读取会话的 plan 内容
 
@@ -176,10 +195,10 @@ def get_plan(session_id: str, agent_id: Optional[str] = None) -> Optional[str]:
     except FileNotFoundError:
         return None
     except Exception as e:
-        print(f"Error reading plan file {file_path}: {e}")
+        logger.warning("Error reading plan file %s: %s", file_path, e)
         return None
 
-def save_plan(session_id: str, content: str, agent_id: Optional[str] = None) -> Path:
+def save_plan(session_id: str, content: str, agent_id: str | None = None) -> Path:
     """
     保存 plan 内容到文件
 
@@ -197,10 +216,10 @@ def save_plan(session_id: str, content: str, agent_id: Optional[str] = None) -> 
         file_path.write_text(content, encoding='utf-8')
         return file_path
     except Exception as e:
-        print(f"Error saving plan file {file_path}: {e}")
+        logger.warning("Error saving plan file %s: %s", file_path, e)
         raise
 
-def plan_exists(session_id: str, agent_id: Optional[str] = None) -> bool:
+def plan_exists(session_id: str, agent_id: str | None = None) -> bool:
     """
     检查 plan 文件是否存在
 

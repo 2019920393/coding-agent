@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 工具执行回执（Receipt）系统。
 
@@ -19,8 +17,11 @@ from __future__ import annotations
 - AuditLogEvent: 审计日志事件（记录工具执行的关键操作）
 """
 
+from __future__ import annotations
+
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal
+
 
 @dataclass
 class CommandReceipt:
@@ -41,6 +42,7 @@ class CommandReceipt:
     summary: str    # 用户可读摘要，如 "已执行 git status"
     command: str    # 实际执行的命令
     exit_code: int  # 退出码，0 表示成功
+    cwd: str = ""   # 命令执行目录
     stdout: str = ""  # 标准输出
     stderr: str = ""  # 标准错误
 
@@ -62,7 +64,7 @@ class DiffReceipt:
     summary: str      # 用户可读摘要，如 "已修改 src/main.py"
     path: str         # 被修改的文件路径
     diff_text: str    # unified diff 格式的变更内容
-    change_id: Optional[str] = None  # 变更 ID（用于 diff review 交互）
+    change_id: str | None = None  # 变更 ID（用于 diff review 交互）
 
 @dataclass
 class GenericReceipt:
@@ -79,6 +81,7 @@ class GenericReceipt:
     kind: Literal["generic"]
     summary: str  # 用户可读摘要
     body: str = ""  # 详细内容
+    metadata: dict[str, Any] = field(default_factory=dict)  # UI 展示用的结构化元数据
 
 @dataclass
 class AgentReceipt:
@@ -104,7 +107,7 @@ class AgentReceipt:
     agent_id: str = ""    # 子代理唯一 ID
     agent_type: str = ""  # 代理类型，如 "worker"、"explorer"
     mode: str = ""        # 执行模式，如 "fork"、"inline"
-    task_id: Optional[str] = None  # 关联的任务 ID
+    task_id: str | None = None  # 关联的任务 ID
     background: bool = False       # 是否后台执行
     status: str = "completed"      # 执行状态
     result_preview: str = ""       # 结果预览文本
@@ -158,7 +161,7 @@ class AuditLogEvent:
     created_at: float  # 事件时间戳（Unix 秒）
     metadata: dict[str, Any] = field(default_factory=dict)  # 额外元数据
 
-ToolReceipt = Union[CommandReceipt, DiffReceipt, GenericReceipt, AgentReceipt]
+ToolReceipt = CommandReceipt | DiffReceipt | GenericReceipt | AgentReceipt
 """工具回执联合类型，是四种回执类型的 Union。"""
 
 def receipt_to_dict(receipt: ToolReceipt) -> dict[str, Any]:
@@ -206,12 +209,11 @@ def render_receipt_for_model(receipt: ToolReceipt, tool_use_id: str) -> dict[str
             }
     """
     if receipt.kind == "command":
-        content = (
-            f"{receipt.summary}\n"
-            f"$ {receipt.command}\n"
-            f"exit_code={receipt.exit_code}\n"
-            f"{receipt.stdout}".strip()
-        )
+        lines = [receipt.summary, f"$ {receipt.command}"]
+        if receipt.cwd:
+            lines.append(f"cwd={receipt.cwd}")
+        lines.extend([f"exit_code={receipt.exit_code}", receipt.stdout])
+        content = "\n".join(lines).strip()
         if receipt.stderr:
             content = f"{content}\n<stderr>\n{receipt.stderr}\n</stderr>"
     elif receipt.kind == "diff":

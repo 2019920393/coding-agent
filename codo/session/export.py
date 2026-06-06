@@ -17,12 +17,11 @@ import logging
 import os
 import re
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-def format_timestamp(dt: Optional[datetime] = None) -> str:
+def format_timestamp(dt: datetime | None = None) -> str:
     """
     格式化时间戳为文件名安全的字符串
 
@@ -42,7 +41,7 @@ def format_timestamp(dt: Optional[datetime] = None) -> str:
     # 格式化为 YYYY-MM-DD-HHmmss
     return dt.strftime("%Y-%m-%d-%H%M%S")
 
-def extract_first_prompt(messages: List[Dict[str, Any]]) -> str:
+def extract_first_prompt(messages: list[dict[str, Any]]) -> str:
     """
     从消息列表中提取第一条用户消息
 
@@ -119,7 +118,7 @@ def sanitize_filename(text: str) -> str:
     return result
 
 def generate_default_filename(
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     extension: str = ".txt",
 ) -> str:
     """
@@ -147,7 +146,7 @@ def generate_default_filename(
 
     return f"conversation-{timestamp}{extension}"
 
-def messages_to_markdown(messages: List[Dict[str, Any]]) -> str:
+def messages_to_markdown(messages: list[dict[str, Any]]) -> str:
     """
     将消息列表转换为 Markdown 格式
 
@@ -217,7 +216,7 @@ def messages_to_markdown(messages: List[Dict[str, Any]]) -> str:
 
     return "\n".join(lines)
 
-def messages_to_plain_text(messages: List[Dict[str, Any]]) -> str:
+def messages_to_plain_text(messages: list[dict[str, Any]]) -> str:
     """
     将消息列表转换为纯文本格式
 
@@ -268,7 +267,7 @@ def messages_to_plain_text(messages: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 def export_session(
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     output_path: str,
     format: str = "txt",
 ) -> str:
@@ -330,7 +329,7 @@ def export_session(
     return output_path
 
 def export_session_to_string(
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     format: str = "txt",
 ) -> str:
     """

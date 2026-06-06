@@ -2,11 +2,13 @@
 LSPTool 单元测试
 """
 
+
 import pytest
-from pathlib import Path
-from codo.tools.lsp_tool import LSPTool, LSPToolInput
+
 from codo.tools.base import ToolUseContext
+from codo.tools.lsp_tool import LSPTool, LSPToolInput
 from codo.types.permissions import PermissionAllowDecision, create_allow_decision
+
 
 @pytest.fixture
 def lsp_tool():
@@ -80,7 +82,7 @@ class TestLSPToolValidation:
     async def test_validate_invalid_position(self, lsp_tool, context, test_python_file):
         """测试无效位置 - Pydantic 应该在模型层面拒绝"""
         with pytest.raises(Exception):  # Pydantic ValidationError
-            input_data = LSPToolInput(
+            LSPToolInput(
                 operation="goToDefinition",
                 file_path=str(test_python_file),
                 line=0,  # 无效：必须 >= 1

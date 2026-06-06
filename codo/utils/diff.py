@@ -11,8 +11,8 @@ Diff 生成工具模块
 """
 
 import difflib
-from typing import List, Optional, Tuple
 from dataclasses import dataclass
+
 
 @dataclass
 class DiffHunk:
@@ -21,12 +21,12 @@ class DiffHunk:
     oldLines: int  # 旧文件行数
     newStart: int  # 新文件起始行号
     newLines: int  # 新文件行数
-    lines: List[str]  # diff 行内容（包含 +/-/ 前缀）
+    lines: list[str]  # diff 行内容（包含 +/-/ 前缀）
 
 @dataclass
 class StructuredPatch:
     """结构化 patch 数据结构"""
-    hunks: List[DiffHunk]
+    hunks: list[DiffHunk]
     
     oldFileName: str
     newFileName: str
@@ -113,9 +113,9 @@ def generateStructuredPatch(
         n=context_lines
     ))
 
-    hunks: List[DiffHunk] = []
-    current_hunk_lines: List[str] = []
-    current_hunk_header: Optional[Tuple[int, int, int, int]] = None
+    hunks: list[DiffHunk] = []
+    current_hunk_lines: list[str] = []
+    current_hunk_header: tuple[int, int, int, int] | None = None
 
     for line in diff_lines:
         # 跳过文件头
@@ -166,7 +166,7 @@ def generateStructuredPatch(
         newFileName=tofile
     )
 
-def countLinesChanged(original: str, modified: str) -> Tuple[int, int]:
+def countLinesChanged(original: str, modified: str) -> tuple[int, int]:
     """
     统计变更行数
 

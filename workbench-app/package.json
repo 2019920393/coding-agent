@@ -1,0 +1,33 @@
+{
+  "name": "codo-workbench-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Codo VSCode-like desktop workbench shell.",
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:electron": "tsup electron/main.ts electron/preload.ts --format cjs --platform node --external electron --out-dir dist-electron --clean --watch",
+    "desktop": "concurrently -k \"npm:dev\" \"npm:dev:electron\" \"wait-on tcp:5173 dist-electron/main.cjs dist-electron/preload.cjs && set ELECTRON_RUN_AS_NODE=&& electron .\"",
+    "build": "tsc -b && tsc -p tsconfig.electron.json && vite build && tsup electron/main.ts electron/preload.ts --format cjs --platform node --external electron --out-dir dist-electron --clean",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "latest",
+    "monaco-editor": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
+    "electron": "33.4.11",
+    "tsup": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "wait-on": "latest"
+  }
+}

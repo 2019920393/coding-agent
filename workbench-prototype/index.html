@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Codo Workbench Prototype</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="workspace-grid">
+      <nav class="activity-bar" aria-label="Codo workbench navigation">
+        <div class="activity-bar__top">
+          <button class="activity-item is-active" type="button" aria-label="Explorer" title="Explorer" data-activity="explorer" data-tooltip="资源管理器">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 3.5h8.2L20 8.3V19a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5Z"></path>
+              <path d="M14.8 3.7v4.8h4.8"></path>
+              <path d="M4 7.5H3A1.5 1.5 0 0 0 1.5 9v10A1.5 1.5 0 0 0 3 20.5h1"></path>
+            </svg>
+          </button>
+        </div>
+      </nav>
+
+      <aside class="explorer-pane" aria-label="Explorer">
+        <header class="explorer-header">
+          <h1>EXPLORER</h1>
+        </header>
+
+        <div class="file-tree">
+          <div class="tree-row tree-row--folder is-open">
+            <span class="tree-chevron">⌄</span>
+            <span class="folder-icon"></span>
+            <span>src</span>
+          </div>
+          <div class="tree-children">
+            <div class="tree-row tree-row--folder">
+              <span class="tree-chevron">›</span>
+              <span class="folder-icon"></span>
+              <span>components</span>
+            </div>
+            <div class="tree-row tree-row--folder">
+              <span class="tree-chevron">›</span>
+              <span class="folder-icon"></span>
+              <span>utils</span>
+            </div>
+            <button class="tree-row tree-row--file" type="button" data-file="app">
+              <span class="tree-spacer"></span>
+              <span class="file-icon file-icon--ts"></span>
+              <span>App.tsx</span>
+            </button>
+            <button class="tree-row tree-row--file" type="button" data-file="main">
+              <span class="tree-spacer"></span>
+              <span class="file-icon file-icon--ts"></span>
+              <span>main.tsx</span>
+            </button>
+          </div>
+
+          <div class="tree-row tree-row--folder is-open">
+            <span class="tree-chevron">⌄</span>
+            <span class="folder-icon"></span>
+            <span>public</span>
+          </div>
+          <div class="tree-children">
+            <button class="tree-row tree-row--file is-selected" type="button" data-file="index">
+              <span class="tree-spacer"></span>
+              <span class="file-icon file-icon--html"></span>
+              <span>index.html</span>
+            </button>
+          </div>
+
+          <button class="tree-row tree-row--file" type="button" data-file="package">
+            <span class="tree-spacer"></span>
+            <span class="file-icon file-icon--json"></span>
+            <span>package.json</span>
+          </button>
+          <button class="tree-row tree-row--file" type="button" data-file="tsconfig">
+            <span class="tree-spacer"></span>
+            <span class="file-icon file-icon--json"></span>
+            <span>tsconfig.json</span>
+          </button>
+          <button class="tree-row tree-row--file" type="button" data-file="readme">
+            <span class="tree-spacer"></span>
+            <span class="file-icon file-icon--md"></span>
+            <span>README.md</span>
+          </button>
+
+          <div class="tree-row tree-row--folder is-open">
+            <span class="tree-chevron">⌄</span>
+            <span class="folder-icon"></span>
+            <span>codo</span>
+          </div>
+          <div class="tree-children">
+            <button class="tree-row tree-row--file tree-row--view" type="button" data-view-target="agents">
+              <span class="tree-spacer"></span>
+              <span class="file-icon file-icon--team"></span>
+              <span>agents.team</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="editor-pane" aria-label="Main editor">
+        <section class="editor-view welcome-view is-active" data-editor-view="welcome">
+          <div class="welcome-copy">
+            <h2>Codo Workbench</h2>
+            <p>Select a file from the explorer to begin</p>
+          </div>
+        </section>
+
+        <section class="editor-view code-view" data-editor-view="code">
+          <header class="editor-title-row">
+            <div class="editor-tab is-active">
+              <span class="file-icon file-icon--ts"></span>
+              <span id="open-file-name">App.tsx</span>
+            </div>
+            <div class="editor-actions">
+              <button type="button" aria-label="Split editor" title="Split editor">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 5h16v14H4z"></path>
+                  <path d="M12 5v14"></path>
+                </svg>
+              </button>
+              <button type="button" aria-label="Close editor" title="Close editor" data-close-code>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m7 7 10 10"></path>
+                  <path d="M17 7 7 17"></path>
+                </svg>
+              </button>
+            </div>
+          </header>
+          <div class="code-shell">
+            <div class="code-gutter" aria-hidden="true" id="code-gutter">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12</div>
+            <pre class="code-block"><code id="code-content"></code></pre>
+          </div>
+        </section>
+
+        <section class="editor-view agent-view" data-editor-view="agents">
+          <header class="agent-page-header">
+            <div>
+              <p>AGENTS TEAM</p>
+              <h2>多 Agent 协作视图</h2>
+            </div>
+            <span>Live Prototype</span>
+          </header>
+
+          <div class="agent-board">
+            <section class="agent-map">
+              <article class="agent-node agent-node--lead">
+                <span class="agent-kicker">Lead</span>
+                <h3>Coordinator</h3>
+                <p>理解用户目标，拆分任务，合并各代理结果。</p>
+                <div class="agent-status agent-status--live">Routing</div>
+              </article>
+
+              <div class="agent-links" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+
+              <div class="agent-workers">
+                <article class="agent-node">
+                  <span class="agent-kicker">Explorer</span>
+                  <h3>Repo Mapper</h3>
+                  <p>读取项目结构，定位相关文件，排除 desktop 目录。</p>
+                  <div class="agent-progress"><span style="width: 100%"></span></div>
+                </article>
+                <article class="agent-node">
+                  <span class="agent-kicker">Coder</span>
+                  <h3>Prototype Builder</h3>
+                  <p>修改 HTML/CSS/JS，保持原型轻量可预览。</p>
+                  <div class="agent-progress"><span style="width: 76%"></span></div>
+                </article>
+                <article class="agent-node">
+                  <span class="agent-kicker">Reviewer</span>
+                  <h3>UX Checker</h3>
+                  <p>检查面板层级、空态、窄屏和交互反馈。</p>
+                  <div class="agent-progress"><span style="width: 48%"></span></div>
+                </article>
+              </div>
+            </section>
+
+            <section class="agent-side">
+              <h3>Handoff Timeline</h3>
+              <div class="handoff-list">
+                <article>
+                  <span>01</span>
+                  <p>Coordinator 将“像 VSCode 的桌面框架”拆成 shell、chat、agents 三个面。</p>
+                </article>
+                <article>
+                  <span>02</span>
+                  <p>Explorer 只读取 `workbench-prototype`，保持主项目和 desktop 目录不动。</p>
+                </article>
+                <article>
+                  <span>03</span>
+                  <p>Coder 输出静态页面，右侧 AI 助手成为独立会话区。</p>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
+
+      </main>
+
+      <aside class="ai-pane" aria-label="AI assistant conversation">
+        <header class="ai-header">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5.5h16v11H8.5L4 20V5.5Z"></path>
+          </svg>
+          <h2>AI助手</h2>
+        </header>
+
+        <div class="chat-thread" id="chat-thread">
+          <article class="message-row message-row--assistant">
+            <div class="assistant-avatar" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M8 9V7a4 4 0 0 1 8 0v2"></path>
+                <path d="M5.5 9.5h13v8h-13z"></path>
+                <path d="M9 13h.1"></path>
+                <path d="M15 13h.1"></path>
+                <path d="M10 16h4"></path>
+              </svg>
+            </div>
+            <div>
+              <div class="message-bubble">
+                <p>你好！我是AI助手，可以帮你处理代码、搜索文件、编辑内容等任务。有什么可以帮助你的吗？</p>
+              </div>
+              <time>13:12</time>
+            </div>
+          </article>
+        </div>
+
+        <form class="chat-composer" id="chat-composer">
+          <label class="chat-input-shell">
+            <textarea id="chat-input" rows="2" placeholder="输入消息... (Enter发送,&#10;Shift+Enter换行)"></textarea>
+          </label>
+          <button class="chat-send" type="submit" aria-label="发送消息" title="发送">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21 3 10 14"></path>
+              <path d="m21 3-7 18-4-7-7-4 18-7Z"></path>
+            </svg>
+          </button>
+        </form>
+      </aside>
+    </div>
+
+    <footer class="statusbar">
+      <div class="statusbar__left">
+        <span class="branch-icon"></span>
+        <span>main</span>
+        <span class="status-ok">✓</span>
+        <span>0</span>
+        <span class="status-warn">!</span>
+        <span>0</span>
+      </div>
+      <div class="statusbar__right">
+        <span>Ln 1, Col 1</span>
+        <span>Spaces: 2</span>
+        <span>UTF-8</span>
+        <span>TypeScript React</span>
+      </div>
+      <button class="help-button" type="button" aria-label="Help" title="Help">?</button>
+    </footer>
+  </div>
+
+  <script>
+    const activityButtons = document.querySelectorAll(".activity-item");
+    const editorViews = document.querySelectorAll(".editor-view");
+    const treeFiles = document.querySelectorAll("[data-file]");
+    const treeViewTargets = document.querySelectorAll("[data-view-target]");
+    const closeCodeButton = document.querySelector("[data-close-code]");
+    const openFileName = document.querySelector("#open-file-name");
+    const codeContent = document.querySelector("#code-content");
+    const codeGutter = document.querySelector("#code-gutter");
+    const chatForm = document.querySelector("#chat-composer");
+    const chatInput = document.querySelector("#chat-input");
+    const chatThread = document.querySelector("#chat-thread");
+    const chatSend = document.querySelector(".chat-send");
+
+    const fileSnippets = {
+      app: {
+        name: "App.tsx",
+        iconClass: "file-icon--ts",
+        code: `import { WorkspaceShell } from "./components/WorkspaceShell";
+import { AgentTeamPanel } from "./components/AgentTeamPanel";
+import { AiAssistant } from "./components/AiAssistant";
+
+export default function App() {
+  return (
+    <WorkspaceShell
+      explorer={<ExplorerTree />}
+      main={<EditorEmptyState />}
+      right={<AiAssistant />}
+      agents={<AgentTeamPanel />}
+    />
+  );
+}`
+      },
+      main: {
+        name: "main.tsx",
+        iconClass: "file-icon--ts",
+        code: `import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./styles.css";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);`
+      },
+      index: {
+        name: "index.html",
+        iconClass: "file-icon--html",
+        code: `<div id="root"></div>
+<script type="module" src="/src/main.tsx"><\/script>`
+      },
+      package: {
+        name: "package.json",
+        iconClass: "file-icon--json",
+        code: `{
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}`
+      },
+      tsconfig: {
+        name: "tsconfig.json",
+        iconClass: "file-icon--json",
+        code: `{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "strict": true
+  }
+}`
+      },
+      readme: {
+        name: "README.md",
+        iconClass: "file-icon--md",
+        code: `# Codo Workbench
+
+VSCode-like desktop shell prototype.
+
+- 左侧是项目 Explorer
+- 中间是编辑器或代码片段
+- 右侧是独立 AI 助手
+- Agents Team 用于展示多代理协作`
+      }
+    };
+
+    function showEditorView(viewName) {
+      editorViews.forEach((view) => {
+        view.classList.toggle("is-active", view.dataset.editorView === viewName);
+      });
+    }
+
+    function setActiveActivity(activityName) {
+      activityButtons.forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.activity === activityName);
+      });
+    }
+
+    function renderCode(fileKey) {
+      const snippet = fileSnippets[fileKey];
+      if (!snippet) {
+        return;
+      }
+
+      openFileName.textContent = snippet.name;
+      const tabIcon = document.querySelector(".editor-tab .file-icon");
+      tabIcon.className = `file-icon ${snippet.iconClass}`;
+      codeContent.textContent = snippet.code;
+      const lineCount = Math.max(snippet.code.split("\n").length, 12);
+      codeGutter.innerHTML = Array.from({ length: lineCount }, (_, index) => index + 1).join("<br>");
+      showEditorView("code");
+      setActiveActivity("explorer");
+    }
+
+    treeFiles.forEach((fileButton) => {
+      fileButton.addEventListener("click", () => {
+        treeFiles.forEach((candidate) => candidate.classList.remove("is-selected"));
+        treeViewTargets.forEach((candidate) => candidate.classList.remove("is-selected"));
+        fileButton.classList.add("is-selected");
+        renderCode(fileButton.dataset.file);
+      });
+    });
+
+    treeViewTargets.forEach((viewButton) => {
+      viewButton.addEventListener("click", () => {
+        treeFiles.forEach((candidate) => candidate.classList.remove("is-selected"));
+        treeViewTargets.forEach((candidate) => candidate.classList.remove("is-selected"));
+        viewButton.classList.add("is-selected");
+        showEditorView(viewButton.dataset.viewTarget);
+        setActiveActivity("explorer");
+      });
+    });
+
+    closeCodeButton.addEventListener("click", () => {
+      showEditorView("welcome");
+    });
+
+    activityButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const activityName = button.dataset.activity;
+        setActiveActivity(activityName);
+        showEditorView("welcome");
+      });
+    });
+
+    function syncChatSend() {
+      chatSend.classList.toggle("is-ready", chatInput.value.trim().length > 0);
+    }
+
+    function appendUserMessage(text) {
+      const article = document.createElement("article");
+      article.className = "message-row message-row--user";
+      article.innerHTML = `
+        <div>
+          <div class="message-bubble">
+            <p></p>
+          </div>
+          <time>${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time>
+        </div>
+      `;
+      article.querySelector("p").textContent = text;
+      chatThread.appendChild(article);
+      chatThread.scrollTop = chatThread.scrollHeight;
+    }
+
+    chatInput.addEventListener("input", syncChatSend);
+    chatInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        chatForm.requestSubmit();
+      }
+    });
+
+    chatForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const message = chatInput.value.trim();
+      if (!message) {
+        return;
+      }
+      appendUserMessage(message);
+      chatInput.value = "";
+      syncChatSend();
+    });
+
+    syncChatSend();
+  </script>
+</body>
+</html>

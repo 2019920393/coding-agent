@@ -1,10 +1,12 @@
 """TodoWriteTool 实现"""
-from typing import Optional, Dict, Any
-from ..base import Tool, ToolUseContext
+from typing import Any
+
+from ..base import Tool
 from ..types import ToolResult, ValidationResult
-from .types import TodoWriteInput, TodoWriteOutput, TodoItem, TodoStatus
-from .prompt import PROMPT, DESCRIPTION
 from .constants import TODO_WRITE_TOOL_NAME
+from .prompt import DESCRIPTION, PROMPT
+from .types import TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput
+
 
 class TodoWriteTool(Tool[TodoWriteInput, TodoWriteOutput, None]):
     """
@@ -28,18 +30,18 @@ class TodoWriteTool(Tool[TodoWriteInput, TodoWriteOutput, None]):
         """返回输出 schema 类 TodoWriteOutput。"""
         return TodoWriteOutput
 
-    async def description(self, input_data: TodoWriteInput, options: Dict[str, Any]) -> str:
+    async def description(self, input_data: TodoWriteInput, options: dict[str, Any]) -> str:
         """返回工具简短描述。"""
         return DESCRIPTION
 
-    async def prompt(self, options: Dict[str, Any]) -> str:
+    async def prompt(self, options: dict[str, Any]) -> str:
         """返回系统提示词中的工具描述。"""
         return PROMPT
 
     async def validate_input(
         self,
         args: TodoWriteInput,
-        context: ToolUseContext
+        context: dict[str, Any]
     ) -> ValidationResult:
         """验证输入参数"""
         # 检查空列表
@@ -78,7 +80,7 @@ class TodoWriteTool(Tool[TodoWriteInput, TodoWriteOutput, None]):
     async def call(
         self,
         args: TodoWriteInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool,
         parent_message,
         on_progress=None
@@ -106,7 +108,7 @@ class TodoWriteTool(Tool[TodoWriteInput, TodoWriteOutput, None]):
             )
 
         # 从 context 中获取 options
-        options = context.get_options()
+        options = context.get("options", {})
 
         # 获取当前会话的 todo key（agent_id 或 session_id）
         agent_id = options.get("agent_id")
@@ -165,7 +167,7 @@ class TodoWriteTool(Tool[TodoWriteInput, TodoWriteOutput, None]):
         self,
         content: TodoWriteOutput,
         tool_use_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """将工具结果映射为 API 响应格式"""
         base = (
             "Todos have been modified successfully. "

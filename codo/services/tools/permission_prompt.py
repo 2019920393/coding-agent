@@ -3,7 +3,7 @@
 import json
 import logging
 from enum import Enum
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ class PermissionChoice(str, Enum):
     DENY = "deny"
     ABORT = "abort"
 
-def format_tool_info(tool_name: str, tool_input: Dict[str, Any]) -> str:
+def format_tool_info(tool_name: str, tool_input: dict[str, Any]) -> str:
     """
     Format tool call information for display.
 
@@ -71,57 +71,6 @@ def format_tool_info(tool_name: str, tool_input: Dict[str, Any]) -> str:
             return f"{tool_name}: {compact}"
         except Exception:
             return f"{tool_name}: (input not serializable)"
-
-async def prompt_permission(
-    tool_name: str,
-    tool_input: Dict[str, Any],
-    message: str = "",
-) -> PermissionChoice:
-    """
-    Show a Textual permission prompt and get the user's choice.
-
-    Displays:
-    - Tool name and formatted input
-    - Permission message (reason why approval is needed)
-    - 4 options: allow once / allow always / deny / abort
-
-    Args:
-        tool_name: Tool name
-        tool_input: Tool input parameters
-        message: Permission request message from the checker
-
-    Returns:
-        PermissionChoice
-    """
-    # 兼容 Pydantic 模型 / dataclass / 普通对象
-    if hasattr(tool_input, "model_dump"):
-        normalized_input = tool_input.model_dump()
-    elif isinstance(tool_input, dict):
-        normalized_input = tool_input
-    elif hasattr(tool_input, "__dict__"):
-        normalized_input = dict(vars(tool_input))
-    else:
-        normalized_input = {}
-
-    from codo.cli.interactive_dialogs import prompt_permission_dialog
-
-    info = format_tool_info(tool_name, normalized_input)
-    dialog_result = await prompt_permission_dialog(
-        tool_name=tool_name,
-        tool_info=info,
-        message=message,
-    )
-
-    logger.debug("[permission] resolved via Textual dialog")
-
-    if dialog_result == "allow_once":
-        return PermissionChoice.ALLOW_ONCE
-    if dialog_result == "allow_always":
-        return PermissionChoice.ALLOW_ALWAYS
-    if dialog_result == "deny":
-        return PermissionChoice.DENY
-    # None 或显式 abort 都归并为 ABORT
-    return PermissionChoice.ABORT
 
 def apply_session_allow_rule(
     permission_context: Any,

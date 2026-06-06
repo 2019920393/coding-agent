@@ -9,23 +9,22 @@
 """
 
 import asyncio
-import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
-from codo.session.storage import SessionStorage
 from codo.session.restore import (
-    parse_jsonl_transcript,
-    extract_messages_from_transcript,
-    extract_todos_from_transcript,
     extract_agent_setting_from_transcript,
     extract_metadata_from_transcript,
+    extract_todos_from_transcript,
     load_session_for_resume,
+    parse_jsonl_transcript,
     restore_session_state,
     validate_session_data,
 )
+from codo.session.storage import SessionStorage
+
 
 def test_extract_todos_from_transcript():
     """
@@ -263,8 +262,9 @@ def test_full_session_restore_workflow():
             with patch('codo.session.restore.find_session_by_id') as mock_find:
                 with patch('codo.session.restore.get_session_file_path') as mock_resolve:
                     # Mock 返回值
-                    from codo.session.types import SessionInfo
                     import time
+
+                    from codo.session.types import SessionInfo
                     mock_find.return_value = SessionInfo(
                         session_id=session_id,
                         summary="Test Session",

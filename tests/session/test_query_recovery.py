@@ -8,12 +8,14 @@
 """
 
 import asyncio
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from anthropic import RateLimitError, APIConnectionError, AuthenticationError
+from anthropic import APIConnectionError, AuthenticationError, RateLimitError
 
 from codo.services.api.errors import APIErrorCategory, classify_api_error, is_retryable
-from codo.services.attachments import get_attachment_messages, create_attachment_message
+from codo.services.attachments import create_attachment_message, get_attachment_messages
+
 
 def test_classify_api_error():
     """测试 API 错误分类"""
@@ -216,7 +218,7 @@ def test_reactive_compact_guard():
     # 验证 hasAttemptedReactiveCompact 防止无限循环
     # 这个测试验证状态机逻辑
 
-    from codo.query import QueryState, AutoCompactState
+    from codo.query import AutoCompactState, QueryState
 
     # 初始状态
     state = QueryState(

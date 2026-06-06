@@ -1,2 +1,3 @@
-from .grep_tool import grep_tool, GrepTool, GrepToolInput, GrepToolOutput
+from .grep_tool import GrepTool, GrepToolInput, GrepToolOutput, grep_tool
+
 __all__ = ['grep_tool', 'GrepTool', 'GrepToolInput', 'GrepToolOutput']

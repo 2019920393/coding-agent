@@ -7,32 +7,32 @@ LSPTool - Language Server Protocol 工具
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional, Any, Dict
+from typing import Any
 
 from lsprotocol.types import (
-    Position,
-    TextDocumentIdentifier,
-    DefinitionParams,
-    ReferenceParams,
-    ReferenceContext,
-    HoverParams,
-    DocumentSymbolParams,
-    WorkspaceSymbolParams,
-    ImplementationParams,
-    CallHierarchyPrepareParams,
     CallHierarchyIncomingCallsParams,
     CallHierarchyOutgoingCallsParams,
+    CallHierarchyPrepareParams,
+    DefinitionParams,
+    DocumentSymbolParams,
+    HoverParams,
+    ImplementationParams,
+    Position,
+    ReferenceContext,
+    ReferenceParams,
+    TextDocumentIdentifier,
+    WorkspaceSymbolParams,
 )
 
-from codo.tools.base import Tool, ToolUseContext
-from codo.tools.types import ValidationResult
-from codo.types.permissions import PermissionAllowDecision, create_allow_decision
 from codo.services.lsp import LSPServerManager
 from codo.services.lsp.types import LSP_METHOD_MAP, LSPOperationType
+from codo.tools.base import Tool
+from codo.tools.types import ToolResult, ValidationResult
+from codo.types.permissions import PermissionAllowDecision, create_allow_decision
 
-from .types import LSPToolInput, LSPToolOutput
 from .formatters import format_result
 from .symbol_context import extract_symbol_at_position
+from .types import LSPToolInput, LSPToolOutput
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
     def __init__(self):
         """初始化 LSPTool，设置工具名称并创建管理器锁。"""
         self.name = "LSP"
-        self._manager: Optional[LSPServerManager] = None
+        self._manager: LSPServerManager | None = None
         self._manager_lock = asyncio.Lock()
 
     @property
@@ -106,7 +106,7 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
             return self._manager
 
     async def validate_input(
-        self, input_data: LSPToolInput, context: ToolUseContext
+        self, input_data: LSPToolInput, context: dict[str, Any]
     ) -> ValidationResult:
         """验证输入
 
@@ -173,7 +173,7 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
         return ValidationResult(result=True)
 
     async def check_permissions(
-        self, input_data: LSPToolInput, context: ToolUseContext
+        self, input_data: LSPToolInput, context: dict[str, Any]
     ) -> PermissionAllowDecision:
         """检查权限
 
@@ -285,11 +285,11 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
     async def call(
         self,
         input_data: LSPToolInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool: Any = None,
         parent_message: Any = None,
-        on_progress: Optional[Any] = None,
-    ) -> "ToolResult":
+        on_progress: Any | None = None,
+    ) -> ToolResult[LSPToolOutput]:
         """执行 LSP 操作
 
         对齐执行器的 5 参数调用约定：
@@ -305,7 +305,6 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
         Returns:
             ToolResult 包含 LSPToolOutput
         """
-        from codo.tools.types import ToolResult as TR
         # 获取工作目录
         cwd = context.get("cwd", ".")
 
@@ -336,7 +335,7 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
             )
 
             if not prepare_result or len(prepare_result) == 0:
-                return TR(data=LSPToolOutput(
+                return ToolResult(data=LSPToolOutput(
                     operation=input_data.operation,
                     file_path=str(file_path),
                     result="No call hierarchy item found at this position",
@@ -374,7 +373,7 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
             cwd,
         )
 
-        return TR(data=LSPToolOutput(
+        return ToolResult(data=LSPToolOutput(
             operation=input_data.operation,
             file_path=str(file_path),
             result=formatted_result,
@@ -383,7 +382,7 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
             symbol_name=symbol_name,
         ))
 
-    def is_concurrency_safe(self, input_data: Optional[LSPToolInput] = None) -> bool:
+    def is_concurrency_safe(self, input_data: LSPToolInput | None = None) -> bool:
         """是否并发安全
 
         Returns:
@@ -391,7 +390,7 @@ class LSPTool(Tool[LSPToolInput, LSPToolOutput, None]):
         """
         return True
 
-    def is_read_only(self, input_data: Optional[LSPToolInput] = None) -> bool:
+    def is_read_only(self, input_data: LSPToolInput | None = None) -> bool:
         """是否只读
 
         Returns:

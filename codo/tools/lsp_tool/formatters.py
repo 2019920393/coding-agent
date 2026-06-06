@@ -5,21 +5,20 @@ LSP 结果格式化器
 """
 
 import os
-from typing import Any, Optional, List, Union
-from pathlib import Path
+from typing import Any
 
 from lsprotocol.types import (
-    Location,
-    LocationLink,
-    SymbolInformation,
-    DocumentSymbol,
-    Hover,
     CallHierarchyIncomingCall,
     CallHierarchyOutgoingCall,
+    DocumentSymbol,
+    Hover,
+    Location,
+    LocationLink,
     MarkupContent,
-    MarkupKind,
     Range,
+    SymbolInformation,
 )
+
 
 def _uri_to_path(uri: str) -> str:
     """将 file:// URI 转换为文件路径
@@ -39,7 +38,7 @@ def _uri_to_path(uri: str) -> str:
         return path
     return uri
 
-def _format_location(location: Union[Location, LocationLink], cwd: str) -> str:
+def _format_location(location: Location | LocationLink, cwd: str) -> str:
     """格式化位置信息
 
     Args:
@@ -91,7 +90,7 @@ def _format_range(range_obj: Range) -> str:
         return f"lines {start_line}:{start_char} - {end_line}:{end_char}"
 
 def format_definition_result(
-    result: Union[Location, List[Location], List[LocationLink], None],
+    result: Location | list[Location] | list[LocationLink] | None,
     cwd: str,
 ) -> tuple[str, int, int]:
     """格式化定义结果
@@ -131,7 +130,7 @@ def format_definition_result(
     return result_text, len(locations), len(files)
 
 def format_references_result(
-    result: Optional[List[Location]],
+    result: list[Location] | None,
     cwd: str,
 ) -> tuple[str, int, int]:
     """格式化引用结果
@@ -147,7 +146,7 @@ def format_references_result(
         return "No references found", 0, 0
 
     # 按文件分组
-    by_file: dict[str, List[Location]] = {}
+    by_file: dict[str, list[Location]] = {}
     for loc in result:
         file_path = _uri_to_path(loc.uri)
         if file_path not in by_file:
@@ -165,7 +164,10 @@ def format_references_result(
             rel_path = file_path
 
         lines.append(f"\n{rel_path}:")
-        for loc in sorted(locations, key=lambda l: (l.range.start.line, l.range.start.character)):
+        for loc in sorted(
+            locations,
+            key=lambda location: (location.range.start.line, location.range.start.character),
+        ):
             line = loc.range.start.line + 1
             char = loc.range.start.character + 1
             lines.append(f"  Line {line}:{char}")
@@ -173,7 +175,7 @@ def format_references_result(
     return "\n".join(lines), len(result), len(by_file)
 
 def format_hover_result(
-    result: Optional[Hover],
+    result: Hover | None,
     cwd: str,
 ) -> tuple[str, int, int]:
     """格式化悬停结果
@@ -216,7 +218,7 @@ def format_hover_result(
     return f"Hover information:\n{text}", 1, 0
 
 def format_document_symbol_result(
-    result: Union[List[DocumentSymbol], List[SymbolInformation], None],
+    result: list[DocumentSymbol] | list[SymbolInformation] | None,
     cwd: str,
 ) -> tuple[str, int, int]:
     """格式化文档符号结果
@@ -257,7 +259,7 @@ def format_document_symbol_result(
     return "\n".join(lines), len(result), 1
 
 def format_workspace_symbol_result(
-    result: Optional[List[SymbolInformation]],
+    result: list[SymbolInformation] | None,
     cwd: str,
 ) -> tuple[str, int, int]:
     """格式化工作区符号结果
@@ -273,7 +275,7 @@ def format_workspace_symbol_result(
         return "No symbols found in workspace", 0, 0
 
     # 按文件分组
-    by_file: dict[str, List[SymbolInformation]] = {}
+    by_file: dict[str, list[SymbolInformation]] = {}
     for symbol in result:
         file_path = _uri_to_path(symbol.location.uri)
         if file_path not in by_file:
@@ -297,7 +299,7 @@ def format_workspace_symbol_result(
     return "\n".join(lines), len(result), len(by_file)
 
 def format_call_hierarchy_result(
-    result: Union[List[CallHierarchyIncomingCall], List[CallHierarchyOutgoingCall], None],
+    result: list[CallHierarchyIncomingCall] | list[CallHierarchyOutgoingCall] | None,
     operation: str,
     cwd: str,
 ) -> tuple[str, int, int]:

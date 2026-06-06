@@ -3,18 +3,15 @@
 
 """
 
-import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from codo.services.memory.paths import (
     ENTRYPOINT_NAME,
     MAX_ENTRYPOINT_BYTES,
     MAX_ENTRYPOINT_LINES,
-    get_project_memory_dir,
 )
+
 
 @dataclass
 class MemoryHeader:
@@ -22,10 +19,10 @@ class MemoryHeader:
     filename: str
     filepath: str
     mtime: float
-    description: Optional[str]
-    memory_type: Optional[str]
+    description: str | None
+    memory_type: str | None
 
-def parse_frontmatter(content: str) -> Dict[str, str]:
+def parse_frontmatter(content: str) -> dict[str, str]:
     """
     从 Markdown 文件中解析类 YAML 的 frontmatter。
 
@@ -52,7 +49,7 @@ def parse_frontmatter(content: str) -> Dict[str, str]:
 
     return result
 
-def scan_memory_files(memory_dir: str) -> List[MemoryHeader]:
+def scan_memory_files(memory_dir: str) -> list[MemoryHeader]:
     """
     扫描 memory 目录中的 `.md` 文件，并读取其 frontmatter。
 
@@ -69,7 +66,7 @@ def scan_memory_files(memory_dir: str) -> List[MemoryHeader]:
 
         try:
             # 只读取前 30 行，避免为了解析头部而加载整个大文件。
-            with open(md_file, "r", encoding="utf-8") as f:
+            with open(md_file, encoding="utf-8") as f:
                 lines = []
                 for i, line in enumerate(f):
                     if i >= 30:
@@ -97,7 +94,7 @@ def scan_memory_files(memory_dir: str) -> List[MemoryHeader]:
     # 最多返回 200 个文件，避免清单过长。
     return headers[:200]
 
-def format_memory_manifest(headers: List[MemoryHeader]) -> str:
+def format_memory_manifest(headers: list[MemoryHeader]) -> str:
     """
     将记忆文件头信息格式化为清单字符串。
 
@@ -115,7 +112,7 @@ def format_memory_manifest(headers: List[MemoryHeader]) -> str:
 
     return "\n".join(lines)
 
-def load_memory_index(cwd: str) -> Optional[str]:
+def load_memory_index(cwd: str) -> str | None:
     """
     加载 `MEMORY.md` 索引文件内容。
 
@@ -123,7 +120,8 @@ def load_memory_index(cwd: str) -> Optional[str]:
     """
     from codo.services.memory.paths import get_memory_index_path
 
-    index_path = get_memory_index_path(cwd)
+    direct_index_path = Path(cwd) / ENTRYPOINT_NAME
+    index_path = direct_index_path if direct_index_path.exists() else get_memory_index_path()
     if not index_path.exists():
         return None
 

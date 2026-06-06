@@ -1,20 +1,21 @@
 """Integration tests for enhanced team collaboration system."""
 
-import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from codo.team import (
-    SubAgentContext,
-    prepare_fresh_context,
-    prepare_fork_context,
-    should_use_fork_mode,
     BackgroundTask,
     TaskStatus,
     get_task_manager,
+    prepare_fork_context,
+    prepare_fresh_context,
+    should_use_fork_mode,
 )
 from codo.team.enhanced_agent import run_subagent_with_mode
 from codo.tools.agent_tool.types import AgentToolInput
+
 
 class FakeRuntimeController:
     def __init__(self):

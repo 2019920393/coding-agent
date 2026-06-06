@@ -2,15 +2,16 @@
 Tests for token estimation module.
 """
 
-import pytest
+
+from codo.constants import DEFAULT_MODEL
 from codo.services.token_estimation import (
-    estimate_token_count,
+    TokenBudget,
     estimate_content_tokens,
     estimate_messages_tokens,
+    estimate_token_count,
     get_context_window,
-    get_max_output_tokens,
-    TokenBudget,
 )
+
 
 class TestEstimateTokenCount:
     def test_empty_string(self):
@@ -101,7 +102,7 @@ class TestEstimateMessagesTokens:
 
 class TestGetContextWindow:
     def test_known_model(self):
-        assert get_context_window("claude-opus-4-20250514") == 200_000
+        assert get_context_window(DEFAULT_MODEL) == 200_000
 
     def test_unknown_model(self):
         result = get_context_window("unknown-model")
@@ -109,36 +110,36 @@ class TestGetContextWindow:
 
 class TestTokenBudget:
     def test_init(self):
-        budget = TokenBudget("claude-opus-4-20250514")
-        assert budget.model == "claude-opus-4-20250514"
+        budget = TokenBudget(DEFAULT_MODEL)
+        assert budget.model == DEFAULT_MODEL
         assert budget.context_window == 200_000
 
     def test_effective_context_window(self):
-        budget = TokenBudget("claude-opus-4-20250514")
+        budget = TokenBudget(DEFAULT_MODEL)
         # Should be context_window - max(max_output, 20000)
         assert budget.effective_context_window < budget.context_window
         assert budget.effective_context_window > 0
 
     def test_auto_compact_threshold(self):
-        budget = TokenBudget("claude-opus-4-20250514")
+        budget = TokenBudget(DEFAULT_MODEL)
         # Should be effective_context_window - buffer
         assert budget.auto_compact_threshold < budget.effective_context_window
         assert budget.auto_compact_threshold > 0
 
     def test_should_auto_compact(self):
-        budget = TokenBudget("claude-opus-4-20250514")
+        budget = TokenBudget(DEFAULT_MODEL)
         # Below threshold
         assert not budget.should_auto_compact(1000)
         # Above threshold
         assert budget.should_auto_compact(budget.auto_compact_threshold + 1)
 
     def test_is_at_blocking_limit(self):
-        budget = TokenBudget("claude-opus-4-20250514")
+        budget = TokenBudget(DEFAULT_MODEL)
         assert not budget.is_at_blocking_limit(1000)
         assert budget.is_at_blocking_limit(budget.blocking_limit + 1)
 
     def test_get_usage_stats(self):
-        budget = TokenBudget("claude-opus-4-20250514")
+        budget = TokenBudget(DEFAULT_MODEL)
         stats = budget.get_usage_stats(50_000)
         assert "token_count" in stats
         assert "percent_used" in stats

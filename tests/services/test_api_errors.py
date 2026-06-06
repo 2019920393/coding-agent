@@ -2,25 +2,25 @@
 Tests for API error classification and retry.
 """
 
-import pytest
 from anthropic import (
     APIConnectionError,
     APITimeoutError,
     AuthenticationError,
     BadRequestError,
-    RateLimitError,
     InternalServerError,
+    RateLimitError,
 )
 
 from codo.services.api.errors import (
-    classify_api_error,
-    is_retryable,
-    is_prompt_too_long_error,
-    parse_prompt_too_long_tokens,
-    get_retry_delay,
-    format_api_error,
     APIErrorCategory,
+    classify_api_error,
+    format_api_error,
+    get_retry_delay,
+    is_prompt_too_long_error,
+    is_retryable,
+    parse_prompt_too_long_tokens,
 )
+
 
 class TestClassifyApiError:
     def test_timeout(self):

@@ -77,10 +77,10 @@ print("测试 1: 会话查询功能")
 print("="*60)
 
 from codo.session.query import (
-    validate_uuid,
-    get_last_session,
     find_session_by_id,
-    search_sessions_by_title
+    get_last_session,
+    search_sessions_by_title,
+    validate_uuid,
 )
 
 # 测试 UUID 验证
@@ -92,7 +92,7 @@ print(f"  validate_uuid('invalid-uuid'): {validate_uuid('invalid-uuid')}")
 print("\n1.2 测试获取最近的会话:")
 last_session = get_last_session(project_dir)
 if last_session:
-    print(f"  ✓ 找到最近的会话:")
+    print("  ✓ 找到最近的会话:")
     print(f"    - Session ID: {last_session.session_id}")
     print(f"    - Summary: {last_session.summary}")
     print(f"    - Custom Title: {last_session.custom_title}")
@@ -104,7 +104,7 @@ else:
 print("\n1.3 测试按 ID 查找会话:")
 session = find_session_by_id(test_session_id, project_dir)
 if session:
-    print(f"  ✓ 找到会话:")
+    print("  ✓ 找到会话:")
     print(f"    - Session ID: {session.session_id}")
     print(f"    - Summary: {session.summary}")
 else:
@@ -122,16 +122,13 @@ print("\n" + "="*60)
 print("测试 2: 会话恢复功能")
 print("="*60)
 
-from codo.session.restore import (
-    load_session_for_resume,
-    validate_session_data
-)
+from codo.session.restore import load_session_for_resume, validate_session_data
 
 # 测试加载最近的会话
 print("\n2.1 测试加载最近的会话 (session_id=None):")
 session_data = load_session_for_resume(None, project_dir)
 if validate_session_data(session_data):
-    print(f"  ✓ 会话加载成功:")
+    print("  ✓ 会话加载成功:")
     print(f"    - Session ID: {session_data['session_info'].session_id}")
     print(f"    - Summary: {session_data['session_info'].summary}")
     print(f"    - Messages: {len(session_data['messages'])}")
@@ -152,7 +149,7 @@ else:
 print(f"\n2.2 测试加载指定会话 (session_id={test_session_id}):")
 session_data = load_session_for_resume(test_session_id, project_dir)
 if validate_session_data(session_data):
-    print(f"  ✓ 会话加载成功:")
+    print("  ✓ 会话加载成功:")
     print(f"    - Session ID: {session_data['session_info'].session_id}")
     print(f"    - Messages: {len(session_data['messages'])}")
 else:
@@ -171,9 +168,9 @@ print(f"""
 ✓ 加载会话功能正常
 
 下一步：
-1. 测试 CLI 命令：python -m codo -c
-2. 测试 CLI 命令：python -m codo -r {test_session_id}
-3. 测试 CLI 命令：python -m codo -r "测试会话"
+1. 测试 Desktop 启动：python -m codo.desktop
+2. 在 Desktop 中恢复会话：{test_session_id}
+3. 在 Desktop 中按标题搜索会话："测试会话"
 
 注意：需要设置 ANTHROPIC_API_KEY 环境变量才能测试完整功能
 """)

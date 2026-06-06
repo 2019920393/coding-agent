@@ -6,11 +6,11 @@ LSP 服务器管理器
 
 import asyncio
 import logging
-from typing import Optional, Dict, List, Any
 from pathlib import Path
+from typing import Any
 
 from .client import LSPClient
-from .types import LSPServerConfig, DEFAULT_LSP_SERVERS
+from .types import DEFAULT_LSP_SERVERS, LSPServerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +20,19 @@ class LSPServerManager:
     管理多个 LSP 服务器实例，根据文件扩展名路由请求
     """
 
-    def __init__(self, server_configs: Optional[List[LSPServerConfig]] = None):
+    def __init__(self, server_configs: list[LSPServerConfig] | None = None):
         """初始化管理器
 
         Args:
             server_configs: 服务器配置列表，默认使用 DEFAULT_LSP_SERVERS
         """
         self._server_configs = server_configs or DEFAULT_LSP_SERVERS
-        self._servers: Dict[str, LSPClient] = {}
-        self._extension_map: Dict[str, List[str]] = {}
-        self._opened_files: Dict[str, str] = {}  # file_path -> server_name
+        self._servers: dict[str, LSPClient] = {}
+        self._extension_map: dict[str, list[str]] = {}
+        self._opened_files: dict[str, str] = {}  # file_path -> server_name
         self._initialized = False
 
-    async def initialize(self, cwd: Optional[str] = None) -> None:
+    async def initialize(self, cwd: str | None = None) -> None:
         """初始化管理器
 
         Args:
@@ -56,7 +56,10 @@ class LSPServerManager:
             # 创建服务器实例（延迟启动）
             client = LSPClient(
                 server_config=config,
-                on_crash=lambda e: self._handle_server_crash(config.name, e),
+                on_crash=lambda e, server_name=config.name: self._handle_server_crash(
+                    server_name,
+                    e,
+                ),
             )
             self._servers[config.name] = client
 
@@ -124,7 +127,7 @@ class LSPServerManager:
             logger.error(f"Error stopping server {server_name}: {e}")
             raise
 
-    def get_server_for_file(self, file_path: str) -> Optional[LSPClient]:
+    def get_server_for_file(self, file_path: str) -> LSPClient | None:
         """获取文件对应的 LSP 服务器
 
         Args:
@@ -143,7 +146,7 @@ class LSPServerManager:
         server_name = server_names[0]
         return self._servers.get(server_name)
 
-    def get_language_id_for_file(self, file_path: str) -> Optional[str]:
+    def get_language_id_for_file(self, file_path: str) -> str | None:
         """获取文件的语言 ID
 
         Args:
@@ -171,8 +174,8 @@ class LSPServerManager:
         return None
 
     async def ensure_server_started(
-        self, file_path: str, cwd: Optional[str] = None
-    ) -> Optional[LSPClient]:
+        self, file_path: str, cwd: str | None = None
+    ) -> LSPClient | None:
         """确保文件对应的服务器已启动
 
         Args:
@@ -208,8 +211,8 @@ class LSPServerManager:
         file_path: str,
         method: str,
         params: Any,
-        cwd: Optional[str] = None,
-    ) -> Optional[Any]:
+        cwd: str | None = None,
+    ) -> Any | None:
         """发送请求到文件对应的 LSP 服务器
 
         Args:
@@ -234,7 +237,7 @@ class LSPServerManager:
             return None
 
     async def open_file(
-        self, file_path: str, content: str, cwd: Optional[str] = None
+        self, file_path: str, content: str, cwd: str | None = None
     ) -> None:
         """打开文件
 
@@ -296,7 +299,7 @@ class LSPServerManager:
         """
         return file_path in self._opened_files
 
-    def get_all_servers(self) -> Dict[str, LSPClient]:
+    def get_all_servers(self) -> dict[str, LSPClient]:
         """获取所有服务器实例
 
         Returns:
@@ -304,7 +307,7 @@ class LSPServerManager:
         """
         return self._servers.copy()
 
-    def get_supported_extensions(self) -> List[str]:
+    def get_supported_extensions(self) -> list[str]:
         """获取所有支持的文件扩展名
 
         Returns:

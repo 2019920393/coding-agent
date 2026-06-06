@@ -2,10 +2,9 @@
 工具系统基类定义
 
 [Workflow]
-本模块定义了工具系统的核心基类和上下文：
-1. ToolUseContext - 工具使用上下文，包含执行环境信息
-2. Tool - 工具抽象基类，定义所有工具必须实现的接口
-3. build_tool - 工具构建装饰器，用于创建具体工具实例
+本模块定义了工具系统的核心基类：
+1. Tool - 工具抽象基类，定义所有工具必须实现的接口
+2. build_tool - 工具构建装饰器，用于创建具体工具实例
 
 工具定义模式：
 ```python
@@ -30,235 +29,82 @@ class BashTool(Tool[BashInput, BashOutput, BashProgress]):
 ```
 """
 
-from typing import Generic, Optional, Callable, Any, Dict, TypeVar
 from abc import ABC, abstractmethod
-from pydantic import BaseModel
-from anthropic.types import ToolResultBlockParam
+from collections.abc import Callable
+from typing import Any, Generic, TypeVar
 
-from .types import (
-    InputT, OutputT, ProgressT,
-    ToolResult, ValidationResult,
-    ToolCallProgress
-)
-from .receipts import ToolReceipt
+from anthropic.types import ToolResultBlockParam
+from pydantic import BaseModel
+
 from codo.types.permissions import PermissionResult, create_passthrough_result
 
-# ============================================================================
-# 工具使用上下文
-# ============================================================================
+from .receipts import ToolReceipt
+from .types import InputT, OutputT, ProgressT, ToolCallProgress, ToolResult, ValidationResult
 
-class ToolUseContext:
-    """
-    工具使用上下文
 
-    同时支持对象属性访问（.options）和字典访问（.get("options")），
-    消除工具实现里的契约漂移问题。
-
-    Attributes:
-        options: 配置选项字典（包含 tools, commands, debug 等）
-        abort_controller: 中止控制器（用于取消长时间运行的工具）
-        messages: 当前对话消息列表
-    """
-
+class ToolUseContext(dict[str, Any]):
     def __init__(
         self,
-        options: Dict[str, Any] = None,
+        *,
+        options: dict[str, Any] | None = None,
         abort_controller: Any = None,
-        messages: list = None,
-        # 支持从字典直接构造（兼容 execution_context 字典格式）
-        _dict: Dict[str, Any] = None,
-    ):
-        """
-        初始化工具使用上下文。
-
-        支持两种构造方式：
-        1. 关键字参数构造：传入 options、abort_controller、messages
-        2. 字典构造：传入 _dict（直接包装 execution_context 字典，保持写回能力）
-
-        参数:
-            options: 配置选项字典，如：
-                {"tools": [...], "model": "claude-opus-4-20250514", "api_client": <AsyncAnthropic>}
-            abort_controller: 中止控制器实例，用于取消长时间运行的工具
-            messages: 当前对话消息列表
-            _dict: 直接包装的底层字典（优先级高于其他参数），如 execution_context 字典
-        """
-        object.__setattr__(self, "_data", _dict if _dict is not None else {})
-
-        if _dict is None:
-            self._data.update(
-                {
-                    "options": options or {},
-                    "abort_controller": abort_controller,
-                    "messages": messages or [],
-                }
-            )
-
-        self.options = self._data.get("options", options or {})
-        self.abort_controller = self._data.get("abort_controller", abort_controller)
-        self.messages = self._data.get("messages", messages or [])
-
-    def __setattr__(self, key: str, value: Any) -> None:
-        """
-        拦截属性赋值，同步写回底层 _data 字典（私有属性除外）。
-
-        确保通过 context.cwd = "/new/path" 赋值时，底层字典也同步更新，
-        保持对象属性和字典数据的一致性。
-
-        参数:
-            key: 属性名
-            value: 属性值
-        """
-        object.__setattr__(self, key, value)
-        if key.startswith("_"):
-            return  # 私有属性不写回字典
-        data = self.__dict__.get("_data")
-        if isinstance(data, dict):
-            data[key] = value
-
-    def __getattr__(self, key: str) -> Any:
-        """
-        属性访问兜底：从底层 _data 字典中查找未定义的属性。
-
-        当通过 context.some_key 访问不存在的属性时，
-        先从 _data 字典中查找，找不到则抛出 AttributeError。
-
-        参数:
-            key: 属性名
-
-        返回:
-            _data 字典中对应的值
-
-        异常:
-            AttributeError: 属性在 _data 中也不存在时抛出
-        """
-        data = self.__dict__.get("_data", {})
-        if key in data:
-            return data[key]
-        raise AttributeError(key)
-
-    # ---- 字典协议：让工具可以用 context.get("key") 访问 ----
-
-    def get(self, key: str, default: Any = None) -> Any:
-        """支持 context.get("cwd") 等字典式访问"""
-        # 先查 _data，再查对象属性
-        if key in self._data:
-            return self._data[key]
-        return getattr(self, key, default)
-
-    def __getitem__(self, key: str) -> Any:
-        """支持 context["cwd"] 访问"""
-        if key in self._data:
-            return self._data[key]
-        if hasattr(self, key):
-            return getattr(self, key)
-        raise KeyError(key)
-
-    def __contains__(self, key: str) -> bool:
-        """支持 "key" in context"""
-        return key in self._data or hasattr(self, key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        """支持 context["key"] = value"""
-        self._data[key] = value
-        if hasattr(self, key):
-            setattr(self, key, value)
+        messages: list[dict[str, Any]] | None = None,
+        **values: Any,
+    ) -> None:
+        super().__init__(values)
+        self["options"] = options if options is not None else {}
+        self["abort_controller"] = abort_controller
+        self["messages"] = messages if messages is not None else []
+        self._source: dict[str, Any] | None = None
 
     @classmethod
-    def coerce(cls, obj: Any) -> "ToolUseContext":
-        """
-        统一入口：把任意输入规范化为 ToolUseContext
+    def from_dict(cls, context: dict[str, Any]) -> "ToolUseContext":
+        wrapped = cls(
+            options=context.get("options") if isinstance(context.get("options"), dict) else {},
+            abort_controller=context.get("abort_controller"),
+            messages=context.get("messages") if isinstance(context.get("messages"), list) else [],
+            **{
+                key: value
+                for key, value in context.items()
+                if key not in {"options", "abort_controller", "messages"}
+            },
+        )
+        wrapped._source = context
+        return wrapped
 
-        - 已经是 ToolUseContext → 原样返回
-        - dict → 包装为 ToolUseContext
-        - 其他 → 尝试当字典用，失败则创建空上下文
+    def sync_to_source(self) -> None:
+        if self._source is not None:
+            self._source.clear()
+            self._source.update(self)
 
-        调用方只需在入口调一次，后续代码全部用属性访问。
-        """
-        if isinstance(obj, cls):
-            return obj
-        if isinstance(obj, dict):
-            return cls(_dict=obj)
-        # 兜底：尝试把对象的 __dict__ 当数据源
-        try:
-            return cls(_dict=vars(obj))
-        except TypeError:
-            return cls()
+    def get_options(self) -> dict[str, Any]:
+        return self["options"]
 
-    def setdefault(self, key: str, default: Any = None) -> Any:
-        """支持 context.setdefault("key", value)"""
-        if key not in self._data:
-            self[key] = default
-        return self._data[key]
+    @property
+    def options(self) -> dict[str, Any]:
+        return self["options"]
 
-    def items(self):
-        """返回底层上下文字典的 (key, value) 迭代器，兼容字典协议。"""
-        return self._data.items()
+    @options.setter
+    def options(self, value: dict[str, Any]) -> None:
+        self["options"] = value
 
-    def keys(self):
-        """返回底层上下文字典的 key 迭代器，兼容字典协议。"""
-        return self._data.keys()
+    @property
+    def abort_controller(self) -> Any:
+        return self.get("abort_controller")
 
-    def values(self):
-        """返回底层上下文字典的 value 迭代器，兼容字典协议。"""
-        return self._data.values()
+    @abort_controller.setter
+    def abort_controller(self, value: Any) -> None:
+        self["abort_controller"] = value
 
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        返回底层上下文字典本身，便于需要原始字典的链路复用。
+    @property
+    def messages(self) -> list[dict[str, Any]]:
+        return self["messages"]
 
-        返回:
-            dict: 底层 _data 字典，如：
-                {
-                    "cwd": "/home/user/project",
-                    "session_id": "sess_abc123",
-                    "options": {"tools": [...], "model": "claude-opus-4-20250514"},
-                    "abort_controller": <AbortController>,
-                }
-        """
-        return self._data
+    @messages.setter
+    def messages(self, value: list[dict[str, Any]]) -> None:
+        self["messages"] = value
 
-    def get_options(self) -> Dict[str, Any]:
-        """
-        返回可写的 options 字典，缺失时自动初始化并回写到底层上下文。
-
-        返回:
-            dict: options 字典，如：
-                {
-                    "tools": [bash_tool, read_tool, ...],
-                    "model": "claude-opus-4-20250514",
-                    "api_client": <AsyncAnthropic>,
-                    "normalize_question_mark": True,
-                }
-        """
-        options = self.get("options", {})
-        if not isinstance(options, dict):
-            options = {}
-            self["options"] = options
-        return options
-
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "ToolUseContext":
-        """从字典创建 ToolUseContext（工厂方法）"""
-        return cls(_dict=d)
-
-    @classmethod
-    def coerce(cls, context: Any) -> "ToolUseContext":
-        """
-        统一把工具执行链里收到的上下文转换成 ToolUseContext。
-
-        规则：
-        - 已经是 ToolUseContext：直接复用
-        - 是 dict：原位包装，保持对原始 execution_context 的写回能力
-        - 是 None：返回空上下文
-        """
-        if isinstance(context, cls):
-            return context
-        if context is None:
-            return cls()
-        if isinstance(context, dict):
-            return cls.from_dict(context)
-        raise TypeError(f"Unsupported tool context type: {type(context)!r}")
-
+# ============================================================================
 # ============================================================================
 # 工具基类
 # ============================================================================
@@ -293,13 +139,13 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
     max_result_size_chars: int
 
     # 可选属性
-    aliases: Optional[list[str]] = None
-    search_hint: Optional[str] = None
+    aliases: list[str] | None = None
+    search_hint: str | None = None
     strict: bool = False
     should_defer: bool = False
     always_load: bool = False
     is_mcp: bool = False
-    mcp_info: Optional[Dict[str, str]] = None
+    mcp_info: dict[str, str] | None = None
 
     # ========================================================================
     # Schema 定义（必需实现）
@@ -317,7 +163,7 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
         pass
 
     @property
-    def output_schema(self) -> Optional[type[OutputT]]:
+    def output_schema(self) -> type[OutputT] | None:
         """
         输出 schema（可选）
 
@@ -334,10 +180,10 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
     async def call(
         self,
         args: InputT,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool: Callable,
         parent_message: Any,
-        on_progress: Optional[ToolCallProgress] = None,
+        on_progress: ToolCallProgress | None = None,
     ) -> ToolResult[OutputT]:
         """
         执行工具
@@ -358,7 +204,7 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
     async def description(
         self,
         input: InputT,
-        options: Dict[str, Any],
+        options: dict[str, Any],
     ) -> str:
         """
         工具描述
@@ -373,7 +219,7 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
         pass
 
     @abstractmethod
-    async def prompt(self, options: Dict[str, Any]) -> str:
+    async def prompt(self, options: dict[str, Any]) -> str:
         """
         系统提示
 
@@ -478,7 +324,7 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
     async def check_permissions(
         self,
         input: InputT,
-        context: ToolUseContext,
+        context: dict[str, Any],
     ) -> PermissionResult:
         """
         权限检查
@@ -498,7 +344,7 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
     async def validate_input(
         self,
         input: InputT,
-        context: ToolUseContext,
+        context: dict[str, Any],
     ) -> ValidationResult:
         """
         输入验证
@@ -529,7 +375,7 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
         """
         return ""
 
-    def user_facing_name(self, input: Optional[InputT] = None) -> str:
+    def user_facing_name(self, input: InputT | None = None) -> str:
         """
         用户可见名称
 
@@ -543,7 +389,7 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
         """
         return self.name
 
-    def get_tool_use_summary(self, input: Optional[InputT] = None) -> Optional[str]:
+    def get_tool_use_summary(self, input: InputT | None = None) -> str | None:
         """
         工具使用摘要
 
@@ -557,7 +403,7 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
         """
         return None
 
-    def get_activity_description(self, input: Optional[InputT] = None) -> Optional[str]:
+    def get_activity_description(self, input: InputT | None = None) -> str | None:
         """
         活动描述
 
@@ -572,7 +418,7 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
         """
         return None
 
-    def get_path(self, input: InputT) -> Optional[str]:
+    def get_path(self, input: InputT) -> str | None:
         """
         获取文件路径
 
@@ -590,8 +436,8 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
         self,
         input: InputT,
         result: ToolResult[OutputT],
-        context: Dict[str, Any] | ToolUseContext,
-    ) -> Optional[Dict[str, Any]]:
+        context: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """
         获取上下文修改器
 
@@ -611,8 +457,8 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
     def build_default_receipt(
         self,
         result: ToolResult[OutputT],
-        input: Optional[InputT] = None,
-    ) -> Optional[ToolReceipt]:
+        input: InputT | None = None,
+    ) -> ToolReceipt | None:
         """
         返回工具默认的结构化收据。
 
@@ -642,7 +488,7 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
     async def execute(
         self,
         input: InputT,
-        context: Dict[str, Any],
+        context: dict[str, Any],
     ) -> ToolResult[OutputT]:
         """
         执行工具（简化版本，用于编排系统）
@@ -657,21 +503,20 @@ class Tool(ABC, Generic[InputT, OutputT, ProgressT]):
         Returns:
             工具执行结果
         """
-        # 如果 input 是字典，转换为 Pydantic 模型
         if isinstance(input, dict):
             input = self.input_schema(**input)
 
-        tool_context = ToolUseContext.coerce(context)
-
-        # 工具层统一使用 ToolUseContext；如上层传入的是 execution_context 字典，
-        # 会原位包装，确保工具内的写操作仍能回写到原始上下文。
-        return await self.call(
-            input,
-            tool_context,
-            lambda: True,     # 编排系统已经处理了权限
-            None,             # parent_message
-            None,             # on_progress
-        )
+        tool_context = context if isinstance(context, ToolUseContext) else ToolUseContext.from_dict(context)
+        try:
+            return await self.call(
+                input,
+                tool_context,
+                lambda: True,
+                None,
+                None,
+            )
+        finally:
+            tool_context.sync_to_source()
 
 # ============================================================================
 # 工具集合类型
@@ -690,18 +535,18 @@ def build_tool(
     name: str,
     max_result_size_chars: int,
     input_schema: type[BaseModel],
-    output_schema: Optional[type] = None,
+    output_schema: type | None = None,
     *,
-    aliases: Optional[list[str]] = None,
-    search_hint: Optional[str] = None,
+    aliases: list[str] | None = None,
+    search_hint: str | None = None,
     strict: bool = False,
     # 可选覆盖的方法
-    is_enabled: Optional[Callable[[], bool]] = None,
-    is_concurrency_safe: Optional[Callable[[Any], bool]] = None,
-    is_read_only: Optional[Callable[[Any], bool]] = None,
-    is_destructive: Optional[Callable[[Any], bool]] = None,
-    to_auto_classifier_input: Optional[Callable[[Any], Any]] = None,
-    user_facing_name: Optional[Callable[[Optional[Any]], str]] = None,
+    is_enabled: Callable[[], bool] | None = None,
+    is_concurrency_safe: Callable[[Any], bool] | None = None,
+    is_read_only: Callable[[Any], bool] | None = None,
+    is_destructive: Callable[[Any], bool] | None = None,
+    to_auto_classifier_input: Callable[[Any], Any] | None = None,
+    user_facing_name: Callable[[Any | None], str] | None = None,
 ) -> Callable[[type[T]], type[T]]:
     """
     工具构建装饰器
@@ -778,6 +623,8 @@ def build_tool(
         # 创建一个新的类，覆盖 input_schema 和 output_schema 属性
         # 这样可以正确实现抽象属性
         class ToolWithSchema(cls):  # type: ignore
+            """build_tool 动态生成的工具子类，用于注入输入和输出 schema。"""
+
             @property
             def input_schema(self) -> type[BaseModel]:
                 """返回工具的输入 schema 类（由 build_tool 装饰器注入）。"""
@@ -785,7 +632,7 @@ def build_tool(
 
             if _output_schema is not None:
                 @property
-                def output_schema(self) -> Optional[type]:
+                def output_schema(self) -> type | None:
                     """返回工具的输出 schema 类（由 build_tool 装饰器注入，可选）。"""
                     return _output_schema
 

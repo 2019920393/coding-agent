@@ -4,8 +4,11 @@ BashTool 类型定义
 定义 BashTool 的输入输出 schema。
 """
 
+
 from pydantic import BaseModel, Field
-from typing import Optional
+
+from codo.constants import BASH_TIMEOUT_DEFAULT_MS, BASH_TIMEOUT_MAX_MS
+
 
 class BashToolInput(BaseModel):
     """BashTool 输入参数"""
@@ -14,17 +17,17 @@ class BashToolInput(BaseModel):
         description="要执行的 shell 命令"
     )
 
-    timeout: Optional[int] = Field(
-        default=120000,
-        description="超时时间（毫秒），默认 120000ms（2分钟），最大 600000ms（10分钟）"
+    timeout: int | None = Field(
+        default=BASH_TIMEOUT_DEFAULT_MS,
+        description=f"超时时间（毫秒），默认 {BASH_TIMEOUT_DEFAULT_MS}ms，最大 {BASH_TIMEOUT_MAX_MS}ms"
     )
 
-    run_in_background: Optional[bool] = Field(
+    run_in_background: bool | None = Field(
         default=False,
         description="是否在后台运行。后台运行时不会等待命令完成，稍后会收到完成通知"
     )
 
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="命令描述，用于显示给用户"
     )
@@ -48,6 +51,11 @@ class BashToolOutput(BaseModel):
         description="执行的命令"
     )
 
+    cwd: str = Field(
+        default="",
+        description="命令执行目录"
+    )
+
     durationMs: int = Field(
         description="执行耗时（毫秒）"
     )
@@ -61,12 +69,12 @@ class BashToolOutput(BaseModel):
         description="是否在后台运行"
     )
 
-    taskId: Optional[str] = Field(
+    taskId: str | None = Field(
         default=None,
         description="后台任务 ID（仅后台运行时返回）"
     )
 
-    status: Optional[str] = Field(
+    status: str | None = Field(
         default=None,
         description="后台任务状态（仅后台运行时返回）"
     )

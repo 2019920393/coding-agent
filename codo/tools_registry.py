@@ -7,11 +7,12 @@
 3. 新增工具时只需维护一处，降低列表漂移风险。
 """
 
-from typing import List
-from codo.tools.base import Tool
-from codo.tools import BUILTIN_TOOLS
 
-def get_all_tools() -> List[Tool]:
+from codo.tools import BUILTIN_TOOLS
+from codo.tools.base import Tool
+
+
+def get_all_tools() -> list[Tool]:
     """
     获取所有可用内置工具。
 
@@ -26,7 +27,7 @@ def get_all_tools() -> List[Tool]:
     # 返回副本而不是原对象，避免调用方 append/pop 影响全局工具注册状态。
     return list(BUILTIN_TOOLS)
 
-def find_tool_by_name(tools: List[Tool], name: str) -> Tool | None:
+def find_tool_by_name(tools: list[Tool], name: str) -> Tool | None:
     """
     按名称查找工具实例。
 

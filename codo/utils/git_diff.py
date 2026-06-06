@@ -9,8 +9,8 @@ Git Diff 生成工具模块
 """
 
 import subprocess
-from typing import Optional
 from dataclasses import dataclass
+
 
 @dataclass
 class GitDiff:
@@ -18,8 +18,8 @@ class GitDiff:
     diff: str  # diff 内容
     oldPath: str  # 旧文件路径
     newPath: str  # 新文件路径
-    oldMode: Optional[str] = None  # 旧文件模式
-    newMode: Optional[str] = None  # 新文件模式
+    oldMode: str | None = None  # 旧文件模式
+    newMode: str | None = None  # 新文件模式
     isNew: bool = False  # 是否为新文件
     isDeleted: bool = False  # 是否为删除文件
     isRenamed: bool = False  # 是否为重命名
@@ -90,8 +90,8 @@ def generateGitDiff(
 
 def fetchSingleFileGitDiff(
     filepath: str,
-    cwd: Optional[str] = None
-) -> Optional[GitDiff]:
+    cwd: str | None = None
+) -> GitDiff | None:
     """
     从 git 仓库获取文件的 diff
 
@@ -155,7 +155,7 @@ def fetchSingleFileGitDiff(
         # 不在 git 仓库或 git 不可用
         return None
 
-def isGitRepository(cwd: Optional[str] = None) -> bool:
+def isGitRepository(cwd: str | None = None) -> bool:
     """
     检查是否在 git 仓库中
 

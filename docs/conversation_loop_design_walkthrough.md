@@ -339,10 +339,10 @@ while True:
 prepare_turn
     │
     ▼
-stream_assistant ──(API 调用)──→ collect_tool_calls
+stream_assistant ──(API 调用)──→ dispatch_tools
     │                                    │
     │                                    ▼
-    │                             execute_tools
+    │                             collect_tool_results
     │                                    │
     │                   ┌────────────────┤
     │                   │                │
@@ -1253,7 +1253,7 @@ while True:
     │   │   └─ content_block_stop
     │   └─ get_final_message() → stop_reason + 完整 blocks
     │
-    ├─ Step 4: collect_tool_calls
+    ├─ Step 4: dispatch_tools
     │   ├─ 解析 tool_use blocks（补全 input_json）
     │   ├─ 构建 assistant_message
     │   ├─ 追加到 messages
@@ -1262,7 +1262,7 @@ while True:
     │
     ├─ [如果 max_tokens 截断]: 注入 "Continue" → continue
     │
-    ├─ Step 5: execute_tools
+    ├─ Step 5: collect_tool_results
     │   ├─ 收集已完成的结果
     │   ├─ 等待剩余结果
     │   ├─ 追加 tool_result 消息

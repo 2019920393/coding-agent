@@ -14,19 +14,17 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+
 import pytest
 
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from codo.services.tools.orchestration import (
-    partition_tool_calls,
-    run_tools_batch,
-    execute_single_tool
-)
-from codo.types.orchestration import ToolExecutionTask, ExecutionStatus
-from codo.types.permissions import PermissionMode, ToolPermissionContext, PermissionRuleSource
+from codo.services.tools.orchestration import partition_tool_calls, run_tools_batch
+from codo.types.orchestration import ExecutionStatus
+from codo.types.permissions import PermissionMode, ToolPermissionContext
+
 
 def test_partition_tool_calls():
     """测试批处理分区"""
@@ -42,7 +40,7 @@ def test_partition_tool_calls():
     context = {"cwd": os.getcwd()}
     batches = partition_tool_calls(tool_calls, context)
 
-    print(f"输入: 3个并发安全工具 (file_read, file_read, grep)")
+    print("输入: 3个并发安全工具 (file_read, file_read, grep)")
     print(f"输出: {len(batches)} 个批次")
 
     assert len(batches) == 1, f"应该合并为1个批次，实际: {len(batches)}"
@@ -61,7 +59,7 @@ def test_partition_tool_calls():
 
     batches = partition_tool_calls(tool_calls, context)
 
-    print(f"\n输入: 混合工具 (file_read, file_read, bash, grep)")
+    print("\n输入: 混合工具 (file_read, file_read, bash, grep)")
     print(f"输出: {len(batches)} 个批次")
 
     assert len(batches) == 3, f"应该分为3个批次，实际: {len(batches)}"
@@ -89,9 +87,9 @@ async def test_concurrent_execution():
 
         # 并发读取3个文件
         tool_calls = [
-            {"id": "1", "name": "Read", "input": {"file_path": f"test1.txt"}},
-            {"id": "2", "name": "Read", "input": {"file_path": f"test2.txt"}},
-            {"id": "3", "name": "Read", "input": {"file_path": f"test3.txt"}},
+            {"id": "1", "name": "Read", "input": {"file_path": "test1.txt"}},
+            {"id": "2", "name": "Read", "input": {"file_path": "test2.txt"}},
+            {"id": "3", "name": "Read", "input": {"file_path": "test3.txt"}},
         ]
 
         context = {
@@ -113,7 +111,7 @@ async def test_concurrent_execution():
         end_time = time.time()
         duration = end_time - start_time
 
-        print(f"执行3个文件读取")
+        print("执行3个文件读取")
         print(f"总耗时: {duration:.3f}秒")
         print(f"完成任务: {result.completed_tasks}/{result.total_tasks}")
         print(f"失败任务: {result.failed_tasks}")
@@ -155,7 +153,7 @@ async def test_serial_execution():
 
         result = await run_tools_batch(tool_calls, context)
 
-        print(f"执行2个bash命令")
+        print("执行2个bash命令")
         print(f"完成任务: {result.completed_tasks}/{result.total_tasks}")
 
         assert result.total_tasks == 2, "应该有2个任务"
@@ -200,7 +198,7 @@ async def test_context_modifier():
 
         result = await run_tools_batch(tool_calls, context)
 
-        print(f"执行 cd + file_read")
+        print("执行 cd + file_read")
         print(f"完成任务: {result.completed_tasks}/{result.total_tasks}")
         print(f"上下文修改器数量: {len(result.context_modifiers)}")
 
@@ -258,7 +256,7 @@ async def test_mixed_execution():
         end_time = time.time()
         duration = end_time - start_time
 
-        print(f"执行混合工具调用")
+        print("执行混合工具调用")
         print(f"总耗时: {duration:.3f}秒")
         print(f"批次数: {len(result.batches)}")
         print(f"完成任务: {result.completed_tasks}/{result.total_tasks}")

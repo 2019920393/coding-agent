@@ -14,10 +14,8 @@
 
 import logging
 import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 # 模块级日志记录器，用于记录代理加载过程中的警告
 logger = logging.getLogger(__name__)
@@ -45,9 +43,9 @@ class AgentDefinition:
     agent_type: str                                    # 代理类型唯一标识
     when_to_use: str                                   # 使用场景描述（给 LLM 决策用）它会被嵌入到 get_agent_tool_prompt() 生成的 prompt 里
     system_prompt: str                                 # 子代理系统提示词
-    tools: Optional[List[str]] = None                  # 允许工具列表（None=继承）
-    disallowed_tools: List[str] = field(default_factory=list)  # 禁止工具列表
-    model: Optional[str] = None                        # 模型名称（None=继承）
+    tools: list[str] | None = None                  # 允许工具列表（None=继承）
+    disallowed_tools: list[str] = field(default_factory=list)  # 禁止工具列表
+    model: str | None = None                        # 模型名称（None=继承）
     max_turns: int = 10                                # 最大对话轮数
     is_read_only: bool = False                         # 是否只读模式
     source: str = "built-in"                           # 来源：built-in / project / user 主要用于调试的时候区分是哪个版本的agent在运行
@@ -187,16 +185,16 @@ PLAN_AGENT = AgentDefinition(
 # 内置代理注册表
 # ============================================================================
 
-BUILTIN_AGENTS: Dict[str, AgentDefinition] = {
+BUILTIN_AGENTS: dict[str, AgentDefinition] = {
     "Explore": EXPLORE_AGENT,
     "Plan": PLAN_AGENT,
 }
 
-def get_builtin_agents() -> Dict[str, AgentDefinition]:
+def get_builtin_agents() -> dict[str, AgentDefinition]:
     """获取所有内置代理定义"""
     return BUILTIN_AGENTS.copy()
 
-def find_agent_by_type(agent_type: str) -> Optional[AgentDefinition]:
+def find_agent_by_type(agent_type: str) -> AgentDefinition | None:
     """根据类型查找代理定义"""
     return BUILTIN_AGENTS.get(agent_type)
 
@@ -205,7 +203,7 @@ def find_agent_by_type(agent_type: str) -> Optional[AgentDefinition]:
 
 # ============================================================================
 
-def _parse_frontmatter(content: str) -> Tuple[dict, str]:
+def _parse_frontmatter(content: str) -> tuple[dict, str]:
     """
     解析 Markdown 文件的 frontmatter
 
@@ -266,7 +264,7 @@ def _parse_frontmatter(content: str) -> Tuple[dict, str]:
 
 # ============================================================================
 # todo部分字段没映射上
-def load_agents_from_dir(agents_dir: str) -> List[AgentDefinition]:
+def load_agents_from_dir(agents_dir: str) -> list[AgentDefinition]:
     """
     从目录加载自定义 agent 定义
 
@@ -309,7 +307,7 @@ def load_agents_from_dir(agents_dir: str) -> List[AgentDefinition]:
         return []
 
     # 存储成功解析的代理定义
-    agents: List[AgentDefinition] = []
+    agents: list[AgentDefinition] = []
 
     # 扫描所有 .md 文件，sorted() 保证加载顺序稳定（按文件名字母序）
     for md_file in sorted(agents_path.glob("*.md")):
@@ -332,7 +330,7 @@ def load_agents_from_dir(agents_dir: str) -> List[AgentDefinition]:
             tools_raw = frontmatter.get("tools")
             if isinstance(tools_raw, list):
                 # frontmatter 已解析为列表（逗号分隔）
-                tools: Optional[List[str]] = tools_raw
+                tools: list[str] | None = tools_raw
             elif isinstance(tools_raw, str) and tools_raw:
                 # 字符串格式，手动分割（兼容解析器未处理的情况）
                 tools = [t.strip() for t in tools_raw.split(",")]
@@ -343,7 +341,7 @@ def load_agents_from_dir(agents_dir: str) -> List[AgentDefinition]:
             # ---- 提取可选字段：model ----
             model_raw = frontmatter.get("model")
             # 空字符串视为未指定，转为 None
-            model: Optional[str] = model_raw if model_raw else None
+            model: str | None = model_raw if model_raw else None
 
             # ---- 提取可选字段：max_turns（支持 snake_case 和 camelCase）----
             max_turns_raw = frontmatter.get("max_turns") or frontmatter.get("maxTurns")
@@ -381,7 +379,7 @@ def load_agents_from_dir(agents_dir: str) -> List[AgentDefinition]:
 
     return agents
 
-def load_all_agents(cwd: str) -> List[AgentDefinition]:
+def load_all_agents(cwd: str) -> list[AgentDefinition]:
     """
     加载所有 agent 定义（内置 + 用户级 + 项目级）
 
@@ -415,7 +413,7 @@ def load_all_agents(cwd: str) -> List[AgentDefinition]:
     # project_agents 的 source 已在 load_agents_from_dir 中设为 "project"
 
     # 步骤 4：按优先级合并（使用字典，后面的覆盖前面的）
-    agent_map: Dict[str, AgentDefinition] = {}
+    agent_map: dict[str, AgentDefinition] = {}
 
     # 内置 agents 优先级最低，先放入
     for agent in builtin:

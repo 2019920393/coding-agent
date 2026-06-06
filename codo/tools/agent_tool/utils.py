@@ -6,13 +6,12 @@ AgentTool 工具函数
 - constants/tools.ts ALL_AGENT_DISALLOWED_TOOLS
 """
 
-from typing import List, Optional, Set
 
 from .agents import AgentDefinition
 
 # 所有子代理都不能使用的工具
 
-ALL_AGENT_DISALLOWED_TOOLS: Set[str] = {
+ALL_AGENT_DISALLOWED_TOOLS: set[str] = {
     "Agent",  # 防止子代理递归生成子代理
 }
 

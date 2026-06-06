@@ -5,10 +5,9 @@ BashTool 辅助函数
 """
 
 import re
-from typing import List, Set
 
 # 只读命令列表
-READONLY_COMMANDS: Set[str] = {
+READONLY_COMMANDS: set[str] = {
     'ls', 'cat', 'head', 'tail', 'grep', 'find', 'wc', 'sort', 'uniq',
     'diff', 'less', 'more', 'file', 'stat', 'du', 'df', 'pwd', 'which',
     'whereis', 'whoami', 'id', 'groups', 'env', 'printenv', 'echo',
@@ -17,7 +16,7 @@ READONLY_COMMANDS: Set[str] = {
     'git remote', 'git tag', 'npm list', 'pip list', 'pip show'
 }
 
-def parseCommand(command: str) -> List[str]:
+def parseCommand(command: str) -> list[str]:
     """
     解析复合命令（&&, ||, ;, |）
 

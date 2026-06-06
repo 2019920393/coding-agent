@@ -5,14 +5,17 @@
 """
 
 import json
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+import logging
+from typing import Any
 
-from codo.session.storage import get_session_file_path
 from codo.session.query import find_session_by_id, get_last_session
+from codo.session.storage import get_session_file_path
 from codo.session.types import SessionInfo
 
-def parse_jsonl_transcript(file_path: str) -> List[Dict[str, Any]]:
+logger = logging.getLogger(__name__)
+
+
+def parse_jsonl_transcript(file_path: str) -> list[dict[str, Any]]:
     """
     解析 JSONL 格式的会话文件
 
@@ -34,7 +37,7 @@ def parse_jsonl_transcript(file_path: str) -> List[Dict[str, Any]]:
     records = []
 
     # 读取文件
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, encoding='utf-8') as f:
         for line_num, line in enumerate(f, 1):
             line = line.strip()
             if not line:
@@ -46,12 +49,12 @@ def parse_jsonl_transcript(file_path: str) -> List[Dict[str, Any]]:
                 records.append(record)
             except json.JSONDecodeError as e:
                 # 记录解析错误，但继续处理其他行
-                print(f"Warning: Failed to parse line {line_num} in {file_path}: {e}")
+                logger.warning("Failed to parse line %s in %s: %s", line_num, file_path, e)
                 continue
 
     return records
 
-def extract_messages_from_transcript(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def extract_messages_from_transcript(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     从会话记录中提取消息
 
@@ -95,7 +98,7 @@ def extract_messages_from_transcript(records: List[Dict[str, Any]]) -> List[Dict
 
     return messages
 
-def extract_todos_from_transcript(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def extract_todos_from_transcript(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     从会话记录中提取 TODO 列表
 
@@ -134,7 +137,7 @@ def extract_todos_from_transcript(records: List[Dict[str, Any]]) -> List[Dict[st
 
     return []
 
-def extract_agent_setting_from_transcript(records: List[Dict[str, Any]]) -> Optional[str]:
+def extract_agent_setting_from_transcript(records: list[dict[str, Any]]) -> str | None:
     """
     从会话记录中提取 agent 设置
 
@@ -159,7 +162,7 @@ def extract_agent_setting_from_transcript(records: List[Dict[str, Any]]) -> Opti
 
     return None
 
-def extract_metadata_from_transcript(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+def extract_metadata_from_transcript(records: list[dict[str, Any]]) -> dict[str, Any]:
     """
     从会话记录中提取完整元数据
 
@@ -263,9 +266,9 @@ def extract_metadata_from_transcript(records: List[Dict[str, Any]]) -> Dict[str,
     return metadata
 
 def load_session_for_resume(
-    session_id: Optional[str],
+    session_id: str | None,
     project_dir: str
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     加载会话用于恢复
 
@@ -296,7 +299,7 @@ def load_session_for_resume(
             如果加载失败则返回 None
     """
     # 步骤 1: 查找会话
-    session_info: Optional[SessionInfo] = None
+    session_info: SessionInfo | None = None
 
     if session_id is None:
         # 查找最近的会话
@@ -319,7 +322,7 @@ def load_session_for_resume(
     try:
         records = parse_jsonl_transcript(file_path)
     except (FileNotFoundError, OSError) as e:
-        print(f"Error: Failed to load session file {file_path}: {e}")
+        logger.warning("Failed to load session file %s: %s", file_path, e)
         return None
 
     # 步骤 4: 提取消息历史（包含 uuid 和 parent_uuid）
@@ -340,7 +343,7 @@ def load_session_for_resume(
         "file_path": file_path
     }
 
-def restore_session_state(resume_data: Dict[str, Any]) -> Dict[str, Any]:
+def restore_session_state(resume_data: dict[str, Any]) -> dict[str, Any]:
     """
     从恢复数据中提取状态
 
@@ -367,7 +370,7 @@ def restore_session_state(resume_data: Dict[str, Any]) -> Dict[str, Any]:
         "metadata": resume_data.get("metadata", {}),
     }
 
-def validate_session_data(data: Optional[Dict[str, Any]]) -> bool:
+def validate_session_data(data: dict[str, Any] | None) -> bool:
     """
     验证会话数据是否有效
 

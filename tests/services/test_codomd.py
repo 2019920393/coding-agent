@@ -4,15 +4,15 @@ CODO.md 多位置支持和 @include 指令测试
 
 import os
 import tempfile
-from pathlib import Path
 
 from codo.services.prompt.codomd import (
     extract_include_paths,
-    process_memory_file,
-    get_memory_files,
+    get_ancestor_dirs,
     get_codo_mds,
-    get_ancestor_dirs
+    get_memory_files,
+    process_memory_file,
 )
+
 
 def test_extract_include_paths_basic():
     """测试基本的 @include 路径提取"""
@@ -79,7 +79,7 @@ def test_process_memory_file_with_include():
             f.write('Included content')
 
         with open(main_file, 'w') as f:
-            f.write(f'Main content\n@./included.md')
+            f.write('Main content\n@./included.md')
 
         processed = set()
         result = process_memory_file(main_file, 'Project', processed)

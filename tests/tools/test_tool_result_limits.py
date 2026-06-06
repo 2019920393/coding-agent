@@ -11,29 +11,30 @@
 7. 消息级预算控制
 """
 
-import pytest
 import math
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
+import pytest
+
+from codo.constants import (
+    DEFAULT_MAX_RESULT_SIZE_CHARS,
+    MAX_TOOL_RESULTS_PER_MESSAGE_CHARS,
+)
+from codo.tools.types import ToolResult
 from codo.utils.tool_result_storage import (
-    get_persistence_threshold,
+    ToolResultStorage,
+    apply_tool_result_budget,
+    build_large_tool_result_message,
     content_size,
     format_file_size,
     generate_preview,
-    persist_tool_result,
-    build_large_tool_result_message,
-    maybe_persist_large_tool_result,
     get_per_message_budget_limit,
-    apply_tool_result_budget,
-    ToolResultStorage,
+    get_persistence_threshold,
+    maybe_persist_large_tool_result,
+    persist_tool_result,
 )
-from codo.constants.tool_limits import (
-    DEFAULT_MAX_RESULT_SIZE_CHARS,
-    MAX_TOOL_RESULTS_PER_MESSAGE_CHARS,
-    PREVIEW_SIZE_BYTES,
-)
-from codo.tools.types import ToolResult
+
 
 class TestPersistenceThreshold:
     """测试持久化阈值获取"""
@@ -77,14 +78,14 @@ class TestContentSize:
         """测试列表内容"""
         content = ["Hello", "World"]
         size = content_size(content)
-        expected = len("Hello".encode('utf-8')) + len("World".encode('utf-8'))
+        expected = len(b"Hello") + len(b"World")
         assert size == expected
 
     def test_dict_content(self):
         """测试字典内容"""
         content = {"text": "Hello", "type": "text"}
         size = content_size(content)
-        expected = len("Hello".encode('utf-8')) + len("text".encode('utf-8'))
+        expected = len(b"Hello") + len(b"text")
         assert size == expected
 
     def test_unicode_content(self):

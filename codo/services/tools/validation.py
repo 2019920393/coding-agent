@@ -4,8 +4,10 @@
 本模块负责工具输入的验证，使用 Pydantic 实现。
 """
 
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any
+
 from pydantic import BaseModel, ValidationError
+
 
 class ValidationResult(BaseModel):
     """
@@ -16,14 +18,14 @@ class ValidationResult(BaseModel):
     验证失败：result=False, message=错误信息, error_code=错误码
     """
     result: bool
-    message: Optional[str] = None
-    error_code: Optional[int] = None
+    message: str | None = None
+    error_code: int | None = None
 
 def validate_tool_input(
     tool_name: str,
     input_schema: type[BaseModel],
-    input_data: Dict[str, Any]
-) -> Tuple[bool, Optional[BaseModel], Optional[str]]:
+    input_data: dict[str, Any]
+) -> tuple[bool, BaseModel | None, str | None]:
     """
     验证工具输入
 
@@ -143,8 +145,8 @@ def format_pydantic_validation_error(
 
 def check_required_fields(
     input_schema: type[BaseModel],
-    input_data: Dict[str, Any]
-) -> List[str]:
+    input_data: dict[str, Any]
+) -> list[str]:
     """
     检查必需字段
 
@@ -176,8 +178,8 @@ def check_required_fields(
 
 def check_extra_fields(
     input_schema: type[BaseModel],
-    input_data: Dict[str, Any]
-) -> List[str]:
+    input_data: dict[str, Any]
+) -> list[str]:
     """
     检查额外字段
 
@@ -208,7 +210,7 @@ def validate_field_type(
     field_name: str,
     field_value: Any,
     expected_type: type
-) -> Tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     验证字段类型
 

@@ -6,11 +6,16 @@
 """
 
 import asyncio
+import logging
 import time
 import uuid
-from typing import Optional, Dict, Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
 
 class TaskStatus(str, Enum):
     """Background task status."""
@@ -41,21 +46,21 @@ class BackgroundTask:
     description: str
     status: TaskStatus = TaskStatus.PENDING
     created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
-    result: Optional[Any] = None
-    error: Optional[str] = None
-    output_file: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    current_action: Optional[str] = None
+    started_at: float | None = None
+    completed_at: float | None = None
+    result: Any | None = None
+    error: str | None = None
+    output_file: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    current_action: str | None = None
 
 class BackgroundTaskManager:
     """Manages background task execution and notifications."""
 
     def __init__(self):
         """Initialize the background task manager."""
-        self._tasks: Dict[str, BackgroundTask] = {}
-        self._running_tasks: Dict[str, asyncio.Task] = {}
+        self._tasks: dict[str, BackgroundTask] = {}
+        self._running_tasks: dict[str, asyncio.Task] = {}
         self._notification_callbacks: list[Callable[[BackgroundTask], Awaitable[None]]] = []
         self._status_callbacks: list[Callable[[BackgroundTask], Awaitable[None]]] = []
 
@@ -63,8 +68,8 @@ class BackgroundTaskManager:
         self,
         agent_id: str,
         description: str,
-        output_file: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        output_file: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> BackgroundTask:
         """
         Create a new background task.
@@ -152,7 +157,7 @@ class BackgroundTaskManager:
             try:
                 await callback(task)
             except Exception as e:
-                print(f"Error in task status callback: {e}")
+                logger.warning("Error in task status callback: %s", e)
 
     async def _notify_task_completion(self, task: BackgroundTask) -> None:
         """
@@ -166,7 +171,7 @@ class BackgroundTaskManager:
                 await callback(task)
             except Exception as e:
                 # Log but don't fail on notification errors
-                print(f"Error in task notification callback: {e}")
+                logger.warning("Error in task notification callback: %s", e)
 
     def register_notification_callback(
         self,
@@ -208,7 +213,7 @@ class BackgroundTaskManager:
         if callback in self._status_callbacks:
             self._status_callbacks.remove(callback)
 
-    def get_task(self, task_id: str) -> Optional[BackgroundTask]:
+    def get_task(self, task_id: str) -> BackgroundTask | None:
         """
         Get task by ID.
 
@@ -270,8 +275,8 @@ class BackgroundTaskManager:
     async def wait_for_task(
         self,
         task_id: str,
-        timeout: Optional[float] = None
-    ) -> Optional[BackgroundTask]:
+        timeout: float | None = None
+    ) -> BackgroundTask | None:
         """
         Wait for a task to complete.
 
@@ -303,7 +308,7 @@ class BackgroundTaskManager:
         return task
 
 # Global background task manager instance
-_global_task_manager: Optional[BackgroundTaskManager] = None
+_global_task_manager: BackgroundTaskManager | None = None
 
 def get_task_manager() -> BackgroundTaskManager:
     """

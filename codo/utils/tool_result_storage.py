@@ -19,24 +19,23 @@
 - 消息级预算：防止多个并行工具结果总和过大
 """
 
-import os
 import math
-from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
-from codo.constants.tool_limits import (
+from codo.constants import (
     DEFAULT_MAX_RESULT_SIZE_CHARS,
-    MAX_TOOL_RESULT_BYTES,
     MAX_TOOL_RESULTS_PER_MESSAGE_CHARS,
-    PREVIEW_SIZE_BYTES,
-    PERSISTED_OUTPUT_TAG,
     PERSISTED_OUTPUT_CLOSING_TAG,
+    PERSISTED_OUTPUT_TAG,
+    PREVIEW_SIZE_BYTES,
 )
+
 
 def get_persistence_threshold(
     tool_name: str,
-    declared_max_result_size_chars: Optional[int],
+    declared_max_result_size_chars: int | None,
 ) -> int:
     """
     获取工具结果持久化阈值
@@ -52,12 +51,9 @@ def get_persistence_threshold(
     Returns:
         实际生效的持久化阈值
     """
-    # 如果工具声明的是 Infinity（Python 中用 float('inf') 或 math.inf）
     if declared_max_result_size_chars is None or not math.isfinite(declared_max_result_size_chars):
-        return float('inf')
+        return math.inf
 
-    # TODO: 未来可以添加 GrowthBook 覆盖逻辑
-    # 目前直接返回 min(工具声明值, 全局默认值)
     return min(declared_max_result_size_chars, DEFAULT_MAX_RESULT_SIZE_CHARS)
 
 def content_size(content: Any) -> int:
@@ -103,7 +99,7 @@ def format_file_size(size_bytes: int) -> str:
     else:
         return f"{size_bytes / (1024 * 1024 * 1024):.1f}GB"
 
-def generate_preview(content: str, max_bytes: int = PREVIEW_SIZE_BYTES) -> Tuple[str, bool]:
+def generate_preview(content: str, max_bytes: int = PREVIEW_SIZE_BYTES) -> tuple[str, bool]:
     """
     生成内容预览
 
@@ -154,7 +150,7 @@ def persist_tool_result(
     content: str,
     tool_use_id: str,
     cwd: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     持久化工具结果到磁盘
 
@@ -198,7 +194,7 @@ def persist_tool_result(
         "has_more": has_more,
     }
 
-def build_large_tool_result_message(result: Dict[str, Any]) -> str:
+def build_large_tool_result_message(result: dict[str, Any]) -> str:
     """
     构建大工具结果的替换消息
 
@@ -231,11 +227,11 @@ def build_large_tool_result_message(result: Dict[str, Any]) -> str:
     return message
 
 def maybe_persist_large_tool_result(
-    tool_result_block: Dict[str, Any],
+    tool_result_block: dict[str, Any],
     tool_name: str,
-    declared_max_result_size_chars: Optional[int],
+    declared_max_result_size_chars: int | None,
     cwd: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     检查工具结果大小，如果超限则持久化
 
@@ -302,14 +298,13 @@ def get_per_message_budget_limit() -> int:
     Returns:
         单消息聚合预算（字符数）
     """
-    # TODO: 未来可以添加 GrowthBook 覆盖逻辑
     return MAX_TOOL_RESULTS_PER_MESSAGE_CHARS
 
 def apply_tool_result_budget(
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     cwd: str,
-    skip_tool_names: Optional[set] = None,
-) -> List[Dict[str, Any]]:
+    skip_tool_names: set | None = None,
+) -> list[dict[str, Any]]:
     """
     应用工具结果预算控制
 

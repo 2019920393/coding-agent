@@ -9,35 +9,42 @@ EditTool - 文件编辑工具（精确字符串替换）
 5. 写入文件
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, Callable, List, Any
-from datetime import datetime
 import os
+from collections.abc import Callable
+from typing import Any
 from uuid import uuid4
 
-from ..base import Tool, ToolUseContext
-from ..types import ToolResult, ValidationResult, ToolCallProgress
-from ..receipts import DiffReceipt, ProposedFileChange
-from ...utils.path import expandPath
+from pydantic import BaseModel, Field
+
+from codo.constants import EDIT_MAX_RESULT_CHARS
+
+from ...utils.diff import generateUnifiedDiff
 from ...utils.fs_operations import getFsImplementation
-from ...utils.diff import generateUnifiedDiff, generateStructuredPatch, DiffHunk
+from ...utils.path import expandPath
+from ..base import Tool
+from ..receipts import DiffReceipt, ProposedFileChange
+from ..types import ToolResult, ValidationResult
+
 
 class EditToolInput(BaseModel):
+    """Edit 工具输入模型，描述目标文件、待替换文本和替换策略。"""
     file_path: str = Field(description="要修改的文件的绝对路径")
     old_string: str = Field(description="要替换的文本")
     new_string: str = Field(description="替换后的文本（必须与 old_string 不同）")
     replace_all: bool = Field(default=False, description="替换所有出现的位置（默认 false）")
 
 class EditToolOutput(BaseModel):
+    """Edit 工具输出模型，返回文件路径、diff 和变更行数。"""
     filePath: str
     diff: str
     linesChanged: int
 
 class EditTool(Tool[EditToolInput, EditToolOutput, None]):
+    """精确字符串替换工具，用于在已读取文件中执行安全编辑。"""
     def __init__(self):
         """初始化 EditTool，设置工具名称和最大结果大小。"""
         self.name = "Edit"
-        self.max_result_size_chars = 100000
+        self.max_result_size_chars = EDIT_MAX_RESULT_CHARS
 
     @property
     def input_schema(self) -> type[EditToolInput]:
@@ -60,7 +67,7 @@ class EditTool(Tool[EditToolInput, EditToolOutput, None]):
 
     async def prompt(self, options: dict) -> str:
         """
-        生成工具描述（用于 ?? API 系统提示词）
+        生成工具描述（用于模型 API 系统提示词）
 
         [Workflow]
         1. 构建基础描述
@@ -109,7 +116,7 @@ class EditTool(Tool[EditToolInput, EditToolOutput, None]):
         """文件编辑不是只读操作，返回 False。"""
         return False
 
-    async def validate_input(self, input_data: EditToolInput, context: ToolUseContext) -> ValidationResult:
+    async def validate_input(self, input_data: EditToolInput, context: dict[str, Any]) -> ValidationResult:
         """
         验证输入参数：文件路径必须是绝对路径，且 old_string 与 new_string 必须不同。
         """
@@ -124,10 +131,10 @@ class EditTool(Tool[EditToolInput, EditToolOutput, None]):
     async def call(
         self,
         input_data: EditToolInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool: Callable,
         parent_message: Any,
-        on_progress: Optional[Callable] = None
+        on_progress: Callable | None = None
     ) -> ToolResult[EditToolOutput]:
         """
         执行精确字符串替换并生成 diff。
@@ -156,7 +163,7 @@ class EditTool(Tool[EditToolInput, EditToolOutput, None]):
                 # 只替换第一次出现
                 idx = original.find(input_data.old_string)
                 if idx == -1:
-                    return ToolResult(error=f'未找到要替换的字符串')
+                    return ToolResult(error='未找到要替换的字符串')
                 modified = original[:idx] + input_data.new_string + original[idx + len(input_data.old_string):]
 
             # 生成 diff

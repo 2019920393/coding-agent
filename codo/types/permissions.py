@@ -10,8 +10,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any, List
-from typing_extensions import Literal
+from typing import Any, Literal
 
 # ============================================================================
 # 权限模式（Permission Modes）
@@ -69,7 +68,7 @@ class PermissionRuleValue:
     - "Write" - 文件写入工具
     """
     tool_name: str  # 工具名称
-    rule_content: Optional[str] = None  # 可选内容（如 "prefix:npm"）
+    rule_content: str | None = None  # 可选内容（如 "prefix:npm"）
 
 @dataclass
 class PermissionRule:
@@ -99,13 +98,13 @@ class PermissionDecisionReason:
     type: Literal["rule", "mode", "safetyCheck", "other"]
 
     # type=rule 时使用
-    rule: Optional[PermissionRule] = None
+    rule: PermissionRule | None = None
 
     # type=mode 时使用
-    mode: Optional[PermissionMode] = None
+    mode: PermissionMode | None = None
 
     # type=safetyCheck 或 other 时使用
-    reason: Optional[str] = None
+    reason: str | None = None
 
 @dataclass
 class PermissionAllowDecision:
@@ -115,9 +114,9 @@ class PermissionAllowDecision:
     参考：src/types/permissions.ts:174-184
     """
     behavior: Literal["allow"] = "allow"
-    updated_input: Optional[Dict[str, Any]] = None  # 更新后的输入（可选）
+    updated_input: dict[str, Any] | None = None  # 更新后的输入（可选）
     user_modified: bool = False  # 用户是否修改了输入
-    decision_reason: Optional[PermissionDecisionReason] = None  # 决策原因
+    decision_reason: PermissionDecisionReason | None = None  # 决策原因
 
 @dataclass
 class PermissionAskDecision:
@@ -129,9 +128,9 @@ class PermissionAskDecision:
     """
     behavior: Literal["ask"] = "ask"
     message: str = ""  # 询问消息
-    updated_input: Optional[Dict[str, Any]] = None  # 更新后的输入（可选）
-    decision_reason: Optional[PermissionDecisionReason] = None  # 决策原因
-    blocked_path: Optional[str] = None  # 被阻止的路径（用于文件操作）
+    updated_input: dict[str, Any] | None = None  # 更新后的输入（可选）
+    decision_reason: PermissionDecisionReason | None = None  # 决策原因
+    blocked_path: str | None = None  # 被阻止的路径（用于文件操作）
 
 @dataclass
 class PermissionDenyDecision:
@@ -142,7 +141,7 @@ class PermissionDenyDecision:
     """
     behavior: Literal["deny"] = "deny"
     message: str = ""  # 拒绝消息
-    decision_reason: Optional[PermissionDecisionReason] = None  # 决策原因
+    decision_reason: PermissionDecisionReason | None = None  # 决策原因
 
 # 权限决策联合类型
 PermissionDecision = PermissionAllowDecision | PermissionAskDecision | PermissionDenyDecision
@@ -158,10 +157,10 @@ class PermissionResult:
     passthrough 表示工具没有做出决策，需要继续检查
     """
     behavior: Literal["allow", "ask", "deny", "passthrough"]
-    message: Optional[str] = None
-    updated_input: Optional[Dict[str, Any]] = None
-    decision_reason: Optional[PermissionDecisionReason] = None
-    blocked_path: Optional[str] = None
+    message: str | None = None
+    updated_input: dict[str, Any] | None = None
+    decision_reason: PermissionDecisionReason | None = None
+    blocked_path: str | None = None
 
 # ============================================================================
 # 工具权限上下文（Tool Permission Context）
@@ -180,9 +179,9 @@ class ToolPermissionContext:
     mode: PermissionMode  # 权限模式
 
     # 权限规则（按来源分组）
-    always_allow_rules: Dict[PermissionRuleSource, List[str]]  # 允许规则
-    always_deny_rules: Dict[PermissionRuleSource, List[str]]  # 拒绝规则
-    always_ask_rules: Dict[PermissionRuleSource, List[str]]  # 询问规则
+    always_allow_rules: dict[PermissionRuleSource, list[str]]  # 允许规则
+    always_deny_rules: dict[PermissionRuleSource, list[str]]  # 拒绝规则
+    always_ask_rules: dict[PermissionRuleSource, list[str]]  # 询问规则
 
     # 工作目录
     cwd: str  # 当前工作目录
@@ -195,8 +194,8 @@ class ToolPermissionContext:
 # ============================================================================
 
 def create_allow_decision(
-    updated_input: Optional[Dict[str, Any]] = None,
-    reason: Optional[PermissionDecisionReason] = None,
+    updated_input: dict[str, Any] | None = None,
+    reason: PermissionDecisionReason | None = None,
 ) -> PermissionAllowDecision:
     """
     创建允许决策
@@ -214,9 +213,9 @@ def create_allow_decision(
 
 def create_ask_decision(
     message: str,
-    updated_input: Optional[Dict[str, Any]] = None,
-    reason: Optional[PermissionDecisionReason] = None,
-    blocked_path: Optional[str] = None,
+    updated_input: dict[str, Any] | None = None,
+    reason: PermissionDecisionReason | None = None,
+    blocked_path: str | None = None,
 ) -> PermissionAskDecision:
     """
     创建询问决策
@@ -236,7 +235,7 @@ def create_ask_decision(
 
 def create_deny_decision(
     message: str,
-    reason: Optional[PermissionDecisionReason] = None,
+    reason: PermissionDecisionReason | None = None,
 ) -> PermissionDenyDecision:
     """
     创建拒绝决策
@@ -253,7 +252,7 @@ def create_deny_decision(
     )
 
 def create_passthrough_result(
-    message: Optional[str] = None,
+    message: str | None = None,
 ) -> PermissionResult:
     """
     创建 passthrough 结果

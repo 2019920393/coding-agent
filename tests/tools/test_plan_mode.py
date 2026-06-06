@@ -8,29 +8,27 @@
 4. ExitPlanMode 工具
 """
 
-import asyncio
 import importlib
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 from codo.services.plans import (
-    generate_word_slug,
-    get_plans_directory,
-    get_plan_slug,
-    set_plan_slug,
-    clear_plan_slug,
-    get_plan_file_path,
-    get_plan,
-    save_plan,
-    plan_exists,
     _plan_slug_cache,
+    clear_plan_slug,
+    generate_word_slug,
+    get_plan,
+    get_plan_file_path,
+    get_plan_slug,
+    plan_exists,
+    save_plan,
 )
-from codo.tools.plan_mode_tools import (
-    EnterPlanModeTool,
-    ExitPlanModeTool,
+from codo.services.plans import (
+    get_plans_directory as get_service_plans_directory,
 )
 from codo.tools.plan_mode_tools.utils import get_plans_directory as get_runtime_plans_directory
+
 
 def test_generate_word_slug():
     """测试 slug 生成"""
@@ -55,7 +53,10 @@ def test_plan_file_management():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
 
-        with patch('codo.services.plans.get_user_dir', return_value=tmpdir_path):
+        with (
+            patch('codo.services.plans.get_user_dir', return_value=tmpdir_path),
+            patch('codo.services.plans.get_merged_config', return_value={}),
+        ):
             # 清除缓存
             _plan_slug_cache.clear()
 
@@ -104,7 +105,10 @@ def test_plan_slug_with_agent():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
 
-        with patch('codo.services.plans.get_user_dir', return_value=tmpdir_path):
+        with (
+            patch('codo.services.plans.get_user_dir', return_value=tmpdir_path),
+            patch('codo.services.plans.get_merged_config', return_value={}),
+        ):
             _plan_slug_cache.clear()
 
             session_id = "test-session-456"
@@ -153,6 +157,46 @@ def test_runtime_plan_mode_uses_codo_directory():
 
         assert plans_dir.endswith(str(Path(".codo") / "plans"))
         assert Path(plans_dir).exists()
+
+def test_service_plan_directory_uses_configured_absolute_path(tmp_path):
+    configured_dir = tmp_path / "configured-plans"
+
+    with patch(
+        "codo.services.plans.get_merged_config",
+        return_value={"plansDirectory": str(configured_dir)},
+    ):
+        plans_dir = get_service_plans_directory(tmp_path)
+
+    assert plans_dir == configured_dir
+    assert configured_dir.exists()
+
+def test_service_plan_directory_resolves_relative_path_from_project_root(tmp_path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    with patch(
+        "codo.services.plans.get_merged_config",
+        return_value={"plansDirectory": "local-plans"},
+    ):
+        plans_dir = get_service_plans_directory(project_root)
+
+    assert plans_dir == project_root / "local-plans"
+    assert plans_dir.exists()
+
+def test_service_plan_directory_reads_project_config_file(monkeypatch, tmp_path):
+    project_root = tmp_path / "project"
+    settings_dir = project_root / ".codo"
+    settings_dir.mkdir(parents=True)
+    (settings_dir / "settings.json").write_text(
+        json.dumps({"plansDirectory": "project-plans"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("codo.utils.config.get_user_dir", lambda: tmp_path / "home-codo")
+
+    plans_dir = get_service_plans_directory(project_root)
+
+    assert plans_dir == project_root / "project-plans"
+    assert plans_dir.exists()
 
 if __name__ == "__main__":
     print("=" * 60)

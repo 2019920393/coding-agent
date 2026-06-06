@@ -4,13 +4,21 @@
 验证会话持久化在各个关键触发点是否正常工作。
 """
 
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
+
+import pytest
 
 from codo.query_engine import QueryEngine
 from codo.session.storage import SessionStorage
-from codo.session.types import TranscriptMessage
+from tests.fake_anthropic_stream import (
+    FakeAnthropicStream,
+    FakeContentBlock,
+    FakeDelta,
+    FakeFinalMessage,
+    FakeStreamEvent,
+)
+
 
 @pytest.fixture
 def mock_session_storage():
@@ -18,6 +26,8 @@ def mock_session_storage():
     storage = Mock(spec=SessionStorage)
     storage.record_messages = Mock()
     storage.save_session = Mock()
+    storage.load_messages = Mock(return_value=[])
+    storage.current_title = "已有标题"
     return storage
 
 @pytest.fixture
@@ -44,30 +54,23 @@ class TestSessionPersistenceIntegration:
     @pytest.mark.asyncio
     async def test_assistant_message_saved(self, query_engine, mock_session_storage):
         """测试 assistant 消息是否被保存"""
-        # Mock API 响应
-        mock_stream = AsyncMock()
-        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
-        mock_stream.__aexit__ = AsyncMock()
-
-        # Mock stream events
-        async def mock_events():
-            yield Mock(type="message_start", message=Mock(role="assistant"))
-            yield Mock(
-                type="content_block_start",
-                index=0,
-                content_block=Mock(type="text", text="")
-            )
-            yield Mock(
-                type="content_block_delta",
-                delta=Mock(type="text_delta", text="Hello")
-            )
-            yield Mock(type="content_block_stop", index=0)
-            yield Mock(type="message_stop")
-
-        mock_stream.__aiter__ = mock_events
-        mock_stream.get_final_message = AsyncMock(return_value=Mock(
-            content=[Mock(type="text", text="Hello")]
-        ))
+        mock_stream = FakeAnthropicStream(
+            events=[
+                FakeStreamEvent(
+                    type="content_block_start",
+                    index=0,
+                    content_block=FakeContentBlock(type="text"),
+                ),
+                FakeStreamEvent(
+                    type="content_block_delta",
+                    delta=FakeDelta(type="text_delta", text="Hello"),
+                ),
+                FakeStreamEvent(type="content_block_stop", index=0),
+            ],
+            final_message=FakeFinalMessage(
+                content=[FakeContentBlock(type="text", text="Hello")],
+            ),
+        )
 
         query_engine.client.messages.stream = Mock(return_value=mock_stream)
 
@@ -94,25 +97,29 @@ class TestSessionPersistenceIntegration:
         query_engine.max_turns = 1
         query_engine.turn_count = 0
 
-        # Mock API 响应（带工具调用）
-        mock_stream = AsyncMock()
-        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
-        mock_stream.__aexit__ = AsyncMock()
-
-        async def mock_events():
-            yield Mock(type="message_start", message=Mock(role="assistant"))
-            yield Mock(
-                type="content_block_start",
-                index=0,
-                content_block=Mock(type="tool_use", id="tool_1", name="test_tool", input={})
-            )
-            yield Mock(type="content_block_stop", index=0)
-            yield Mock(type="message_stop")
-
-        mock_stream.__aiter__ = mock_events
-        mock_stream.get_final_message = AsyncMock(return_value=Mock(
-            content=[Mock(type="tool_use", id="tool_1", name="test_tool", input={})]
-        ))
+        mock_stream = FakeAnthropicStream(
+            events=[
+                FakeStreamEvent(
+                    type="content_block_start",
+                    index=0,
+                    content_block=FakeContentBlock(
+                        type="tool_use",
+                        id="tool_1",
+                        name="test_tool",
+                    ),
+                ),
+                FakeStreamEvent(type="content_block_stop", index=0),
+            ],
+            final_message=FakeFinalMessage(
+                content=[
+                    FakeContentBlock(
+                        type="tool_use",
+                        id="tool_1",
+                        name="test_tool",
+                    )
+                ],
+            ),
+        )
 
         query_engine.client.messages.stream = Mock(return_value=mock_stream)
 
@@ -150,25 +157,29 @@ class TestSessionPersistenceIntegration:
         # 限制为单轮，避免 tool_use follow-up 进入无限循环
         query_engine.max_turns = 1
 
-        # Mock API 响应（带工具调用）
-        mock_stream = AsyncMock()
-        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
-        mock_stream.__aexit__ = AsyncMock()
-
-        async def mock_events():
-            yield Mock(type="message_start", message=Mock(role="assistant"))
-            yield Mock(
-                type="content_block_start",
-                index=0,
-                content_block=Mock(type="tool_use", id="tool_1", name="test_tool", input={})
-            )
-            yield Mock(type="content_block_stop", index=0)
-            yield Mock(type="message_stop")
-
-        mock_stream.__aiter__ = mock_events
-        mock_stream.get_final_message = AsyncMock(return_value=Mock(
-            content=[Mock(type="tool_use", id="tool_1", name="test_tool", input={})]
-        ))
+        mock_stream = FakeAnthropicStream(
+            events=[
+                FakeStreamEvent(
+                    type="content_block_start",
+                    index=0,
+                    content_block=FakeContentBlock(
+                        type="tool_use",
+                        id="tool_1",
+                        name="test_tool",
+                    ),
+                ),
+                FakeStreamEvent(type="content_block_stop", index=0),
+            ],
+            final_message=FakeFinalMessage(
+                content=[
+                    FakeContentBlock(
+                        type="tool_use",
+                        id="tool_1",
+                        name="test_tool",
+                    )
+                ],
+            ),
+        )
 
         query_engine.client.messages.stream = Mock(return_value=mock_stream)
 

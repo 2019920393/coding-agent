@@ -7,9 +7,6 @@
 3. 支持动态命令注册（技能、插件，后续扩展）
 """
 
-from typing import List, Optional
-
-# 从 base 模块导入命令基础类型
 from .base import (
     Command,
     CommandArgumentOption,
@@ -17,6 +14,18 @@ from .base import (
     CommandResult,
     CommandType,
 )
+
+__all__ = [
+    "BUILTIN_COMMANDS",
+    "Command",
+    "CommandArgumentOption",
+    "CommandArgumentSpec",
+    "CommandResult",
+    "CommandType",
+    "find_command",
+    "get_enabled_commands",
+    "has_command",
+]
 
 # ============================================================================
 # 内置命令定义
@@ -238,7 +247,7 @@ status_command = Command(
 
 # ============================================================================
 
-BUILTIN_COMMANDS: List[Command] = [
+BUILTIN_COMMANDS: list[Command] = [
     help_command,
     skills_command,
     clear_command,
@@ -268,7 +277,7 @@ BUILTIN_COMMANDS: List[Command] = [
 
 # ============================================================================
 
-def find_command(name: str, commands: Optional[List[Command]] = None) -> Optional[Command]:
+def find_command(name: str, commands: list[Command] | None = None) -> Command | None:
     """
     根据名称或别名查找命令
 
@@ -308,7 +317,7 @@ def find_command(name: str, commands: Optional[List[Command]] = None) -> Optiona
     # 未找到匹配的命令
     return None
 
-def has_command(name: str, commands: Optional[List[Command]] = None) -> bool:
+def has_command(name: str, commands: list[Command] | None = None) -> bool:
     """
     检查命令是否存在
 
@@ -324,7 +333,7 @@ def has_command(name: str, commands: Optional[List[Command]] = None) -> bool:
     """
     return find_command(name, commands) is not None
 
-def get_enabled_commands(commands: Optional[List[Command]] = None) -> List[Command]:
+def get_enabled_commands(commands: list[Command] | None = None) -> list[Command]:
     """
     获取所有已启用且非隐藏的命令
 

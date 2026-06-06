@@ -6,14 +6,13 @@
 
 import pytest
 from pydantic import BaseModel
-from anthropic.types import ToolResultBlockParam
 
 from codo.tools import (
     Tool,
     ToolResult,
     ToolUseContext,
-    build_tool,
     ValidationResult,
+    build_tool,
 )
 from codo.types.permissions import PermissionResult, create_passthrough_result
 

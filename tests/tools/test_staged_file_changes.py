@@ -4,6 +4,7 @@ from codo.services.tools.execution_manager import ExecutionManager
 from codo.tools.edit_tool import EditToolInput, edit_tool
 from codo.tools.write_tool import WriteToolInput, write_tool
 
+
 @pytest.mark.asyncio
 async def test_write_tool_returns_staged_change_before_apply(tmp_path):
     target = tmp_path / "note.txt"

@@ -10,11 +10,12 @@ SkillTool 实现
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
-from ..base import Tool, ToolUseContext
-from ..types import ToolResult, ValidationResult
 from codo.types.permissions import PermissionAskDecision, create_ask_decision
+
+from ..base import Tool
+from ..types import ToolResult, ValidationResult
 from .constants import (
     ERROR_CODE_PARSE_ERROR,
     ERROR_CODE_SKILL_NOT_FOUND,
@@ -31,15 +32,15 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
-class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], None]):
+class SkillTool(Tool[SkillInput, SkillOutputInline | SkillOutputForked, None]):
     """在主对话中执行 skill。"""
 
     def __init__(self):
         """初始化 SkillTool，设置工具名称、最大结果大小和内部 skill 注册表。"""
         self.name = SKILL_TOOL_NAME
         self.max_result_size_chars = 100_000
-        self._skills: Dict[str, Any] = {}
-        self._skill_definitions: Dict[str, SkillDefinition] = {}
+        self._skills: dict[str, Any] = {}
+        self._skill_definitions: dict[str, SkillDefinition] = {}
         self._file_skill_names: set[str] = set()  # 记录从文件加载的 skill，可用于清除重新加载
 
     @property
@@ -48,15 +49,15 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
         return SkillInput
 
     @property
-    def output_schema(self) -> type[Union[SkillOutputInline, SkillOutputForked]]:
+    def output_schema(self) -> type[SkillOutputInline | SkillOutputForked]:
         """返回输出 schema 类（以 SkillOutputInline 为代表）。"""
         return SkillOutputInline
 
-    async def description(self, input_data: SkillInput, options: Dict[str, Any]) -> str:
+    async def description(self, input_data: SkillInput, options: dict[str, Any]) -> str:
         """返回工具简短描述。"""
         return DESCRIPTION
 
-    async def prompt(self, options: Dict[str, Any]) -> str:
+    async def prompt(self, options: dict[str, Any]) -> str:
         """
         生成系统提示词中的工具描述，动态列出所有用户可调用的 skill。
 
@@ -110,8 +111,8 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
         handler: Any,
         *,
         description: str = "",
-        allowed_tools: Optional[List[str]] = None,
-        model: Optional[str] = None,
+        allowed_tools: list[str] | None = None,
+        model: str | None = None,
         user_invocable: bool = True,
     ) -> None:
         """
@@ -144,7 +145,7 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
         """判断指定名称的 skill 是否已注册。"""
         return self._normalize_skill_name(name) in self._skills
 
-    def get_skill_definition(self, name: str) -> Optional[SkillDefinition]:
+    def get_skill_definition(self, name: str) -> SkillDefinition | None:
         """
         获取指定名称的 skill 定义对象。
 
@@ -156,7 +157,7 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
         """
         return self._skill_definitions.get(self._normalize_skill_name(name))
 
-    def list_skills(self, *, user_invocable_only: bool = False) -> List[SkillDefinition]:
+    def list_skills(self, *, user_invocable_only: bool = False) -> list[SkillDefinition]:
         """
         列出所有已注册的 skill，按名称字母序排列。
 
@@ -172,7 +173,7 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
             return [skill for skill in skills if skill.user_invocable]
         return skills
 
-    def render_skill_prompt(self, name: str, args: Optional[str] = None) -> str:
+    def render_skill_prompt(self, name: str, args: str | None = None) -> str:
         """
         渲染 skill 的完整提示词（含命令名、参数、系统提醒和 skill 正文）。
 
@@ -222,7 +223,7 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
     async def validate_input(
         self,
         args: SkillInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
     ) -> ValidationResult:
         """
         验证 skill 名称非空且已注册。
@@ -249,7 +250,7 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
     async def check_permissions(
         self,
         args: SkillInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
     ) -> PermissionAskDecision:
         """
         检查权限：skill 执行需要用户确认。
@@ -266,11 +267,11 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
     async def call(
         self,
         args: SkillInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool,
         parent_message,
         on_progress=None,
-    ) -> ToolResult[Union[SkillOutputInline, SkillOutputForked]]:
+    ) -> ToolResult[SkillOutputInline | SkillOutputForked]:
         """
         执行 skill。
 
@@ -330,9 +331,9 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
 
     def map_tool_result_to_tool_result_block_param(
         self,
-        content: Union[SkillOutputInline, SkillOutputForked],
+        content: SkillOutputInline | SkillOutputForked,
         tool_use_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         将 skill 执行结果转换为 API tool_result 消息块格式。
 
@@ -401,7 +402,7 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
                 return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
-    def _parse_markdown_skill_file(self, path: Path) -> Optional[SkillDefinition]:
+    def _parse_markdown_skill_file(self, path: Path) -> SkillDefinition | None:
         """
         解析单个 Markdown skill 文件，返回 SkillDefinition 对象。
 
@@ -424,7 +425,7 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
             logger.warning("加载技能文件失败 %s: %s", path, exc)
             return None
 
-        frontmatter: Dict[str, Any] = {}
+        frontmatter: dict[str, Any] = {}
         body = raw
         if raw.startswith("---"):
             end_idx = raw.find("---", 3)
@@ -473,7 +474,7 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
         )
 #找到目录里所有能作为 skill 的 md 文件，去重，排好序返回。 支持"直接扔文件"和"建子目录放 SKILL.md"两种组织方式。
     @staticmethod
-    def _iter_markdown_skill_files(skills_dir: Path) -> List[Path]:
+    def _iter_markdown_skill_files(skills_dir: Path) -> list[Path]:
         """
         遍历 skills 目录，收集所有 Markdown skill 文件路径（去重、排序）。
 
@@ -487,7 +488,7 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
         返回:
             List[Path]: 去重后按路径字母序排列的 skill 文件列表
         """
-        candidates: Dict[str, Path] = {}
+        candidates: dict[str, Path] = {}
         for path in skills_dir.glob("*.md"):
             if path.is_file():
                 candidates[str(path.resolve())] = path
@@ -554,7 +555,9 @@ class SkillTool(Tool[SkillInput, Union[SkillOutputInline, SkillOutputForked], No
         home = os.path.expanduser("~")  # 把 ~ 替换为当前用户的主目录绝对路径
         roots = [
             os.path.join(home, ".codo", "skills"),
+            os.path.join(home, ".codex", "skills"),
             os.path.join(cwd, ".codo", "skills"),
+            os.path.join(cwd, ".codex", "skills"),
         ]
 
         loaded = 0

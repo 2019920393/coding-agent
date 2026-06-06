@@ -3,11 +3,12 @@
 
 """
 
-import time
 import logging
-from typing import Dict, Any, Optional, Callable, List
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,9 @@ class ProgressUpdate:
     tool_name: str
     progress_type: ProgressType
     message: str
-    percentage: Optional[float] = None
+    percentage: float | None = None
     timestamp: float = field(default_factory=time.time)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 class ProgressReporter:
     """
@@ -54,8 +55,8 @@ class ProgressReporter:
 
     def __init__(self):
         """初始化进度报告器"""
-        self._callbacks: List[Callable[[ProgressUpdate], None]] = []
-        self._progress_history: Dict[str, List[ProgressUpdate]] = {}
+        self._callbacks: list[Callable[[ProgressUpdate], None]] = []
+        self._progress_history: dict[str, list[ProgressUpdate]] = {}
 
     def register_callback(self, callback: Callable[[ProgressUpdate], None]) -> None:
         """
@@ -70,7 +71,7 @@ class ProgressReporter:
         self,
         tool_use_id: str,
         tool_name: str,
-        message: Optional[str] = None
+        message: str | None = None
     ) -> None:
         """
         报告工具开始执行
@@ -94,8 +95,8 @@ class ProgressReporter:
         tool_use_id: str,
         tool_name: str,
         message: str,
-        percentage: Optional[float] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        percentage: float | None = None,
+        metadata: dict[str, Any] | None = None
     ) -> None:
         """
         报告工具执行进度
@@ -121,8 +122,8 @@ class ProgressReporter:
         self,
         tool_use_id: str,
         tool_name: str,
-        message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        message: str | None = None,
+        metadata: dict[str, Any] | None = None
     ) -> None:
         """
         报告工具完成
@@ -148,7 +149,7 @@ class ProgressReporter:
         tool_use_id: str,
         tool_name: str,
         error: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: dict[str, Any] | None = None
     ) -> None:
         """
         报告工具失败
@@ -172,7 +173,7 @@ class ProgressReporter:
         self,
         tool_use_id: str,
         tool_name: str,
-        reason: Optional[str] = None
+        reason: str | None = None
     ) -> None:
         """
         报告工具取消
@@ -209,7 +210,7 @@ class ProgressReporter:
             except Exception as e:
                 logger.error(f"Progress callback error: {e}")
 
-    def get_progress_history(self, tool_use_id: str) -> List[ProgressUpdate]:
+    def get_progress_history(self, tool_use_id: str) -> list[ProgressUpdate]:
         """
         获取工具的进度历史
 
@@ -221,7 +222,7 @@ class ProgressReporter:
         """
         return self._progress_history.get(tool_use_id, [])
 
-    def get_latest_progress(self, tool_use_id: str) -> Optional[ProgressUpdate]:
+    def get_latest_progress(self, tool_use_id: str) -> ProgressUpdate | None:
         """
         获取工具的最新进度
 
@@ -234,7 +235,7 @@ class ProgressReporter:
         history = self._progress_history.get(tool_use_id, [])
         return history[-1] if history else None
 
-    def clear_history(self, tool_use_id: Optional[str] = None) -> None:
+    def clear_history(self, tool_use_id: str | None = None) -> None:
         """
         清除进度历史
 
@@ -247,7 +248,7 @@ class ProgressReporter:
             self._progress_history.clear()
 
 # 全局进度报告器实例
-_global_reporter: Optional[ProgressReporter] = None
+_global_reporter: ProgressReporter | None = None
 
 def get_progress_reporter() -> ProgressReporter:
     """

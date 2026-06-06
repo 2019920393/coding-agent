@@ -5,6 +5,7 @@ import pytest
 from codo.tools.base import Tool as RuntimeTool
 from codo.tools_registry import get_all_tools
 
+
 def test_all_registered_tools_use_active_runtime_base():
     tools = get_all_tools()
     assert tools

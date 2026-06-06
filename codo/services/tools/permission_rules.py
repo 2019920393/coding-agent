@@ -5,17 +5,17 @@
 简化为个人使用场景，移除复杂的 MCP 规则匹配。
 """
 
-from typing import Any, List, Dict, Optional
 import re
+from typing import Any
 
+from codo.tools.base import Tool
 from codo.types.permissions import (
+    PermissionBehavior,
     PermissionRule,
     PermissionRuleSource,
     PermissionRuleValue,
-    PermissionBehavior,
     ToolPermissionContext,
 )
-from codo.tools.base import Tool
 
 # ============================================================================
 # 规则解析（Rule Parsing）
@@ -125,7 +125,7 @@ def tool_matches_rule(tool: Tool, rule: PermissionRule) -> bool:
 def get_all_rules_by_behavior(
     context: ToolPermissionContext,
     behavior: PermissionBehavior,
-) -> List[PermissionRule]:
+) -> list[PermissionRule]:
     """
     获取指定行为的所有规则
 
@@ -156,7 +156,7 @@ def get_all_rules_by_behavior(
         return []
 
     # 遍历所有规则来源，按优先级排序（PROJECT > USER > SESSION）
-    rules: List[PermissionRule] = []
+    rules: list[PermissionRule] = []
     for source in [
         PermissionRuleSource.PROJECT_SETTINGS,
         PermissionRuleSource.USER_SETTINGS,
@@ -180,7 +180,7 @@ def get_all_rules_by_behavior(
 
     return rules
 
-def get_allow_rules(context: ToolPermissionContext) -> List[PermissionRule]:
+def get_allow_rules(context: ToolPermissionContext) -> list[PermissionRule]:
     """
     获取所有允许规则
 
@@ -194,7 +194,7 @@ def get_allow_rules(context: ToolPermissionContext) -> List[PermissionRule]:
     """
     return get_all_rules_by_behavior(context, "allow")
 
-def get_deny_rules(context: ToolPermissionContext) -> List[PermissionRule]:
+def get_deny_rules(context: ToolPermissionContext) -> list[PermissionRule]:
     """
     获取所有拒绝规则
 
@@ -208,7 +208,7 @@ def get_deny_rules(context: ToolPermissionContext) -> List[PermissionRule]:
     """
     return get_all_rules_by_behavior(context, "deny")
 
-def get_ask_rules(context: ToolPermissionContext) -> List[PermissionRule]:
+def get_ask_rules(context: ToolPermissionContext) -> list[PermissionRule]:
     """
     获取所有询问规则
 
@@ -225,7 +225,7 @@ def get_ask_rules(context: ToolPermissionContext) -> List[PermissionRule]:
 def tool_always_allowed_rule(
     context: ToolPermissionContext,
     tool: Tool,
-) -> Optional[PermissionRule]:
+) -> PermissionRule | None:
     """
     检查工具是否在允许规则列表中
 
@@ -256,7 +256,7 @@ def tool_always_allowed_rule(
 def get_deny_rule_for_tool(
     context: ToolPermissionContext,
     tool: Tool,
-) -> Optional[PermissionRule]:
+) -> PermissionRule | None:
     """
     检查工具是否在拒绝规则列表中
 
@@ -287,7 +287,7 @@ def get_deny_rule_for_tool(
 def get_ask_rule_for_tool(
     context: ToolPermissionContext,
     tool: Tool,
-) -> Optional[PermissionRule]:
+) -> PermissionRule | None:
     """
     检查工具是否在询问规则列表中
 
@@ -319,7 +319,7 @@ def get_rule_by_contents_for_tool(
     context: ToolPermissionContext,
     tool: Tool,
     behavior: PermissionBehavior,
-) -> Dict[str, PermissionRule]:
+) -> dict[str, PermissionRule]:
     """
     获取工具的内容特定规则映射
 
@@ -344,7 +344,7 @@ def get_rule_by_contents_for_tool(
         {rule_content: PermissionRule} 映射
     """
     rules = get_all_rules_by_behavior(context, behavior)
-    rule_by_contents: Dict[str, PermissionRule] = {}
+    rule_by_contents: dict[str, PermissionRule] = {}
 
     for rule in rules:
         # 只处理匹配工具名称且有内容的规则
@@ -362,7 +362,7 @@ def get_rule_by_contents_for_tool(
 def matches_rule_content(
     tool_name: str,
     rule_content: str,
-    input_data: Dict[str, Any],
+    input_data: dict[str, Any],
 ) -> bool:
     """
     检查工具输入是否匹配规则内容
@@ -383,8 +383,8 @@ def matches_rule_content(
     """
     # 延迟导入，避免循环依赖
     from codo.services.tools.shell_rule_matching import (
-        parse_permission_rule,
         match_wildcard_pattern,
+        parse_permission_rule,
     )
 
     # Bash/PowerShell 工具使用 shell 规则匹配
@@ -417,7 +417,7 @@ def matches_rule_content(
 
 def create_permission_request_message(
     tool_name: str,
-    reason: Optional[str] = None,
+    reason: str | None = None,
 ) -> str:
     """
     创建权限请求消息

@@ -7,33 +7,41 @@ WriteTool - 文件写入工具（创建或完全覆盖）
 3. 写入文件
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, Callable, Any
 import os
+from collections.abc import Callable
+from typing import Any
 from uuid import uuid4
 
-from ..base import Tool, ToolUseContext
-from ..types import ToolResult, ValidationResult, ToolCallProgress
-from ..receipts import DiffReceipt, ProposedFileChange
-from ...utils.path import expandPath
-from ...utils.fs_operations import getFsImplementation
+from pydantic import BaseModel, Field
+
+from codo.constants import EDIT_MAX_RESULT_CHARS
+
 from ...utils.diff import generateUnifiedDiff
+from ...utils.fs_operations import getFsImplementation
+from ...utils.path import expandPath
+from ..base import Tool
+from ..receipts import DiffReceipt, ProposedFileChange
+from ..types import ToolResult, ValidationResult
+
 
 class WriteToolInput(BaseModel):
+    """Write 工具输入模型，描述目标绝对路径和完整文件内容。"""
     file_path: str = Field(description="要写入的文件的绝对路径（必须是绝对路径，不是相对路径）")
     content: str = Field(description="要写入文件的内容")
 
 class WriteToolOutput(BaseModel):
+    """Write 工具输出模型，返回写入类型、文件路径、内容和可选 diff。"""
     type: str  # 'create' | 'update'
     filePath: str
     content: str
-    diff: Optional[str] = None
+    diff: str | None = None
 
 class WriteTool(Tool[WriteToolInput, WriteToolOutput, None]):
+    """文件写入工具，用于创建新文件或完整覆盖已有文件。"""
     def __init__(self):
         """初始化 WriteTool，设置工具名称和最大结果大小。"""
         self.name = "Write"
-        self.max_result_size_chars = 100000
+        self.max_result_size_chars = EDIT_MAX_RESULT_CHARS
 
     @property
     def input_schema(self) -> type[WriteToolInput]:
@@ -56,7 +64,7 @@ class WriteTool(Tool[WriteToolInput, WriteToolOutput, None]):
 
     async def prompt(self, options: dict) -> str:
         """
-        生成工具描述（用于 ?? API 系统提示词）
+        生成工具描述（用于模型 API 系统提示词）
 
         [Workflow]
         1. 构建基础描述
@@ -103,7 +111,7 @@ class WriteTool(Tool[WriteToolInput, WriteToolOutput, None]):
         """文件写入不是只读操作，返回 False。"""
         return False
 
-    async def validate_input(self, input_data: WriteToolInput, context: ToolUseContext) -> ValidationResult:
+    async def validate_input(self, input_data: WriteToolInput, context: dict[str, Any]) -> ValidationResult:
         """验证文件路径必须是绝对路径。"""
         if not os.path.isabs(input_data.file_path):
             return ValidationResult(result=False, message='文件路径必须是绝对路径')
@@ -112,10 +120,10 @@ class WriteTool(Tool[WriteToolInput, WriteToolOutput, None]):
     async def call(
         self,
         input_data: WriteToolInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool: Callable,
         parent_message: Any,
-        on_progress: Optional[Callable] = None
+        on_progress: Callable | None = None
     ) -> ToolResult[WriteToolOutput]:
         """
         写入文件（创建或完全覆盖）。

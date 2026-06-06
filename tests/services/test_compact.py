@@ -3,17 +3,19 @@ Tests for compact service modules.
 """
 
 import pytest
-from codo.services.compact.prompt import (
-    get_compact_prompt,
-    format_compact_summary,
-    get_compact_user_summary_message,
-)
+
 from codo.services.compact.compact import (
     AutoCompactState,
-    _strip_images_from_messages,
     _ensure_alternating,
     _stream_compact_summary,
+    _strip_images_from_messages,
 )
+from codo.services.compact.prompt import (
+    format_compact_summary,
+    get_compact_prompt,
+    get_compact_user_summary_message,
+)
+
 
 class TestCompactPrompt:
     def test_get_compact_prompt_basic(self):

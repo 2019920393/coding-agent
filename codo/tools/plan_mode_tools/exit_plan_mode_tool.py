@@ -1,12 +1,15 @@
 """ExitPlanModeTool 实现"""
-from typing import Dict, Any
-from ..base import Tool, ToolUseContext
-from ..types import ToolResult, ValidationResult
+from typing import Any
+
 from codo.types.permissions import PermissionAskDecision, create_ask_decision
-from .types import ExitPlanModeInput, ExitPlanModeOutput
-from .prompt import EXIT_PLAN_MODE_PROMPT, EXIT_PLAN_MODE_DESCRIPTION
+
+from ..base import Tool
+from ..types import ToolResult, ValidationResult
 from .constants import EXIT_PLAN_MODE_TOOL_NAME
+from .prompt import EXIT_PLAN_MODE_DESCRIPTION, EXIT_PLAN_MODE_PROMPT
+from .types import ExitPlanModeInput, ExitPlanModeOutput
 from .utils import read_plan_file, write_plan_file
+
 
 class ExitPlanModeTool(Tool[ExitPlanModeInput, ExitPlanModeOutput, None]):
     """
@@ -30,11 +33,11 @@ class ExitPlanModeTool(Tool[ExitPlanModeInput, ExitPlanModeOutput, None]):
         """返回输出 schema 类 ExitPlanModeOutput。"""
         return ExitPlanModeOutput
 
-    async def description(self, input_data: ExitPlanModeInput, options: Dict[str, Any]) -> str:
+    async def description(self, input_data: ExitPlanModeInput, options: dict[str, Any]) -> str:
         """返回工具简短描述。"""
         return EXIT_PLAN_MODE_DESCRIPTION
 
-    async def prompt(self, options: Dict[str, Any]) -> str:
+    async def prompt(self, options: dict[str, Any]) -> str:
         """返回系统提示词中的工具描述。"""
         return EXIT_PLAN_MODE_PROMPT
 
@@ -53,11 +56,11 @@ class ExitPlanModeTool(Tool[ExitPlanModeInput, ExitPlanModeOutput, None]):
     async def validate_input(
         self,
         args: ExitPlanModeInput,
-        context: ToolUseContext
+        context: dict[str, Any]
     ) -> ValidationResult:
         """验证输入参数"""
         # 检查是否在计划模式中
-        options = context.get_options()
+        options = context.get("options", {})
         app_state = options.get("app_state", {})
         if not app_state.get("plan_mode"):
             return ValidationResult(
@@ -70,7 +73,7 @@ class ExitPlanModeTool(Tool[ExitPlanModeInput, ExitPlanModeOutput, None]):
     async def check_permissions(
         self,
         args: ExitPlanModeInput,
-        context: ToolUseContext
+        context: dict[str, Any]
     ) -> PermissionAskDecision:
         """检查权限：需要用户确认"""
         return create_ask_decision(
@@ -81,14 +84,14 @@ class ExitPlanModeTool(Tool[ExitPlanModeInput, ExitPlanModeOutput, None]):
     async def call(
         self,
         args: ExitPlanModeInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool,
         parent_message,
         on_progress=None
     ) -> ToolResult[ExitPlanModeOutput]:
         """执行退出计划模式"""
         # 获取 options
-        options = context.get_options()
+        options = context.get("options", {})
         app_state = options.get("app_state", {})
         plan_file_path = app_state.get("plan_file_path")
         agent_id = options.get("agent_id")
@@ -123,7 +126,7 @@ class ExitPlanModeTool(Tool[ExitPlanModeInput, ExitPlanModeOutput, None]):
         self,
         content: ExitPlanModeOutput,
         tool_use_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """将工具结果映射为 API 响应格式"""
         # 代理模式
         if content.isAgent:

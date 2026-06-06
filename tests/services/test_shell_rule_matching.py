@@ -11,15 +11,15 @@ Shell 规则匹配测试
 
 import pytest
 
+from codo.services.tools.permission_rules import matches_rule_content
 from codo.services.tools.shell_rule_matching import (
-    permission_rule_extract_prefix,
     has_wildcards,
     match_wildcard_pattern,
     parse_permission_rule,
+    permission_rule_extract_prefix,
     suggestion_for_exact_command,
     suggestion_for_prefix,
 )
-from codo.services.tools.permission_rules import matches_rule_content
 
 # ============================================================================
 # permission_rule_extract_prefix 测试

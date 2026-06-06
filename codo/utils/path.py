@@ -11,9 +11,9 @@
 
 import os
 from pathlib import Path
-from typing import Optional
 
-def expandPath(path: str, cwd: Optional[str] = None) -> str:
+
+def expandPath(path: str, cwd: str | None = None) -> str:
     """
     扩展路径为绝对路径
 
@@ -54,7 +54,7 @@ def expandPath(path: str, cwd: Optional[str] = None) -> str:
 
     return path
 
-def toRelativePath(path: str, cwd: Optional[str] = None) -> str:
+def toRelativePath(path: str, cwd: str | None = None) -> str:
     """
     将绝对路径转换为相对路径
 

@@ -15,17 +15,17 @@ Stop Hooks 执行
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from codo.services.tools.hooks import execute_hook, aggregate_hook_results, AggregatedHookResult
+from codo.services.tools.hooks import AggregatedHookResult, aggregate_hook_results, execute_hook
 from codo.services.tools.hooks_loader import get_hooks_for_event
-from codo.types.hooks import PostToolUseHookInput, HookConfig
+from codo.types.hooks import PostToolUseHookInput
 
 logger = logging.getLogger(__name__)
 
 async def execute_stop_hooks(
     cwd: str,
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
 ) -> AggregatedHookResult:
     """
     执行 Stop hooks
@@ -101,7 +101,7 @@ async def execute_stop_hooks(
 
 async def handle_stop_hooks(
     cwd: str,
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
 ) -> bool:
     """
     处理 Stop hooks 并返回是否应该继续

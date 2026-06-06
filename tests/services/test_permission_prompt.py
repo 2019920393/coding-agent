@@ -3,20 +3,32 @@ Tests for permission prompt UI and orchestration integration.
 
 Covers:
 - format_tool_info: formatting for all tool types
-- prompt_permission: Textual-only async wrapper
+- prompt_permission: Desktop async wrapper
 - apply_session_allow_rule: session rule persistence
 - orchestration ask→interactive integration
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 
 from codo.services.tools.permission_prompt import (
     PermissionChoice,
-    format_tool_info,
-    prompt_permission,
     apply_session_allow_rule,
+    format_tool_info,
 )
+from codo.types.runtime import InteractionRequest
+
+
+class _PermissionBroker:
+    def __init__(self, choice: PermissionChoice) -> None:
+        self.choice = choice
+        self.request_payload: InteractionRequest | None = None
+
+    async def request(self, request: InteractionRequest) -> str:
+        self.request_payload = request
+        return self.choice.value
+
 
 class TestFormatToolInfo:
     def test_bash_with_description(self):
@@ -97,38 +109,6 @@ class TestFormatToolInfo:
         result = format_tool_info("CustomTool", {"obj": Unserializable()})
         assert "not serializable" in result
 
-class TestPromptPermissionAsync:
-    @pytest.mark.asyncio
-    @patch(
-        "codo.cli.interactive_dialogs.prompt_permission_dialog",
-        new_callable=AsyncMock,
-        return_value="allow_once",
-    )
-    async def test_prompt_permission_maps_allow_once(self, mock_dialog):
-        result = await prompt_permission("Bash", {"command": "ls"})
-        assert result == PermissionChoice.ALLOW_ONCE
-        mock_dialog.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    @patch(
-        "codo.cli.interactive_dialogs.prompt_permission_dialog",
-        new_callable=AsyncMock,
-        return_value="deny",
-    )
-    async def test_prompt_permission_maps_deny(self, mock_dialog):
-        result = await prompt_permission("Bash", {"command": "rm -rf /"}, message="danger")
-        assert result == PermissionChoice.DENY
-
-    @pytest.mark.asyncio
-    @patch(
-        "codo.cli.interactive_dialogs.prompt_permission_dialog",
-        new_callable=AsyncMock,
-        side_effect=RuntimeError("Textual app is required"),
-    )
-    async def test_prompt_permission_propagates_when_textual_missing(self, mock_dialog):
-        with pytest.raises(RuntimeError, match="Textual app is required"):
-            await prompt_permission("Bash", {"command": "ls"})
-
 class TestApplySessionAllowRule:
     def test_adds_rule(self):
         from codo.types.permissions import PermissionRuleSource
@@ -181,7 +161,7 @@ class TestOrchestrationPermissionIntegration:
     @pytest.mark.asyncio
     async def test_ask_allow_once_proceeds(self):
         from codo.services.tools.orchestration import execute_single_tool
-        from codo.types.orchestration import ToolExecutionTask, ExecutionStatus
+        from codo.types.orchestration import ExecutionStatus, ToolExecutionTask
 
         task = ToolExecutionTask(
             tool_use_id="test-1",
@@ -200,17 +180,18 @@ class TestOrchestrationPermissionIntegration:
         mock_ask_decision.behavior = "ask"
         mock_ask_decision.message = "Needs approval"
 
+        broker = _PermissionBroker(PermissionChoice.ALLOW_ONCE)
         with patch("codo.services.tools.orchestration.find_tool_by_name", return_value=mock_tool), \
-             patch("codo.services.tools.permission_checker.has_permissions_to_use_tool", new_callable=AsyncMock, return_value=mock_ask_decision), \
-             patch("codo.services.tools.permission_prompt.prompt_permission", new_callable=AsyncMock, return_value=PermissionChoice.ALLOW_ONCE):
-            await execute_single_tool(task, {"cwd": "/tmp"})
+             patch("codo.services.tools.permission_checker.has_permissions_to_use_tool", new_callable=AsyncMock, return_value=mock_ask_decision):
+            await execute_single_tool(task, {"cwd": "/tmp", "interaction_broker": broker})
 
         assert task.status == ExecutionStatus.COMPLETED
+        assert broker.request_payload is not None
 
     @pytest.mark.asyncio
     async def test_ask_deny_raises_permission_error(self):
         from codo.services.tools.orchestration import execute_single_tool
-        from codo.types.orchestration import ToolExecutionTask, ExecutionStatus
+        from codo.types.orchestration import ExecutionStatus, ToolExecutionTask
 
         task = ToolExecutionTask(
             tool_use_id="test-2",
@@ -227,10 +208,10 @@ class TestOrchestrationPermissionIntegration:
         mock_ask_decision.behavior = "ask"
         mock_ask_decision.message = "Dangerous!"
 
+        broker = _PermissionBroker(PermissionChoice.DENY)
         with patch("codo.services.tools.orchestration.find_tool_by_name", return_value=mock_tool), \
-             patch("codo.services.tools.permission_checker.has_permissions_to_use_tool", new_callable=AsyncMock, return_value=mock_ask_decision), \
-             patch("codo.services.tools.permission_prompt.prompt_permission", new_callable=AsyncMock, return_value=PermissionChoice.DENY):
-            await execute_single_tool(task, {"cwd": "/tmp"})
+             patch("codo.services.tools.permission_checker.has_permissions_to_use_tool", new_callable=AsyncMock, return_value=mock_ask_decision):
+            await execute_single_tool(task, {"cwd": "/tmp", "interaction_broker": broker})
 
         assert task.status == ExecutionStatus.FAILED
         assert isinstance(task.error, PermissionError)
@@ -255,16 +236,16 @@ class TestOrchestrationPermissionIntegration:
         mock_ask_decision.behavior = "ask"
         mock_ask_decision.message = "Dangerous!"
 
+        broker = _PermissionBroker(PermissionChoice.ABORT)
         with patch("codo.services.tools.orchestration.find_tool_by_name", return_value=mock_tool), \
-             patch("codo.services.tools.permission_checker.has_permissions_to_use_tool", new_callable=AsyncMock, return_value=mock_ask_decision), \
-             patch("codo.services.tools.permission_prompt.prompt_permission", new_callable=AsyncMock, return_value=PermissionChoice.ABORT):
+             patch("codo.services.tools.permission_checker.has_permissions_to_use_tool", new_callable=AsyncMock, return_value=mock_ask_decision):
             with pytest.raises(KeyboardInterrupt):
-                await execute_single_tool(task, {"cwd": "/tmp"})
+                await execute_single_tool(task, {"cwd": "/tmp", "interaction_broker": broker})
 
     @pytest.mark.asyncio
     async def test_ask_allow_always_adds_session_rule(self):
         from codo.services.tools.orchestration import execute_single_tool
-        from codo.types.orchestration import ToolExecutionTask, ExecutionStatus
+        from codo.types.orchestration import ExecutionStatus, ToolExecutionTask
         from codo.types.permissions import PermissionRuleSource
 
         perm_ctx = MagicMock()
@@ -287,12 +268,12 @@ class TestOrchestrationPermissionIntegration:
         mock_ask_decision.behavior = "ask"
         mock_ask_decision.message = "Read permission"
 
+        broker = _PermissionBroker(PermissionChoice.ALLOW_ALWAYS)
         with patch("codo.services.tools.orchestration.find_tool_by_name", return_value=mock_tool), \
-             patch("codo.services.tools.permission_checker.has_permissions_to_use_tool", new_callable=AsyncMock, return_value=mock_ask_decision), \
-             patch("codo.services.tools.permission_prompt.prompt_permission", new_callable=AsyncMock, return_value=PermissionChoice.ALLOW_ALWAYS):
+             patch("codo.services.tools.permission_checker.has_permissions_to_use_tool", new_callable=AsyncMock, return_value=mock_ask_decision):
             await execute_single_tool(
                 task,
-                {"cwd": "/tmp", "permission_context": perm_ctx},
+                {"cwd": "/tmp", "permission_context": perm_ctx, "interaction_broker": broker},
             )
 
         assert task.status == ExecutionStatus.COMPLETED

@@ -1,9 +1,16 @@
-import asyncio
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from codo.query import QueryParams, Terminal, query
+from tests.fake_anthropic_stream import (
+    FakeAnthropicStream,
+    FakeContentBlock,
+    FakeDelta,
+    FakeFinalMessage,
+    FakeStreamEvent,
+)
+
 
 class ReceiptTool:
     def __init__(self):
@@ -35,37 +42,51 @@ class ReceiptTool:
 @pytest.mark.asyncio
 async def test_query_emits_receipt_dict():
     mock_client = AsyncMock()
-    mock_stream = AsyncMock()
-    mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
-    mock_stream.__aexit__ = AsyncMock(return_value=None)
-
-    async def mock_stream_events_turn1():
-        yield Mock(
-            type="content_block_start",
-            content_block=Mock(type="tool_use", id="tool1", name="Read", input={}),
-        )
-        yield Mock(type="content_block_stop")
-
-    async def mock_stream_events_turn2():
-        yield Mock(type="content_block_start", content_block=Mock(type="text", text=""))
-        yield Mock(type="content_block_delta", delta=Mock(type="text_delta", text="Done"))
-        yield Mock(type="content_block_stop")
-
     turn_count = [0]
 
-    async def mock_stream_factory():
+    async def mock_stream_factory(**_kwargs):
         turn_count[0] += 1
         if turn_count[0] == 1:
-            mock_stream.__aiter__ = mock_stream_events_turn1
-            mock_stream.get_final_message = AsyncMock(
-                return_value=Mock(
-                    content=[Mock(type="tool_use", id="tool1", name="Read", input={"file_path": "test.txt"})]
-                )
+            return FakeAnthropicStream(
+                events=[
+                    FakeStreamEvent(
+                        type="content_block_start",
+                        content_block=FakeContentBlock(
+                            type="tool_use",
+                            id="tool1",
+                            name="Read",
+                        ),
+                    ),
+                    FakeStreamEvent(type="content_block_stop"),
+                ],
+                final_message=FakeFinalMessage(
+                    content=[
+                        FakeContentBlock(
+                            type="tool_use",
+                            id="tool1",
+                            name="Read",
+                            input={"file_path": "test.txt"},
+                        )
+                    ],
+                ),
             )
-        else:
-            mock_stream.__aiter__ = mock_stream_events_turn2
-            mock_stream.get_final_message = AsyncMock(return_value=Mock(content=[Mock(type="text", text="Done")]))
-        return mock_stream
+
+        return FakeAnthropicStream(
+            events=[
+                FakeStreamEvent(
+                    type="content_block_start",
+                    content_block=FakeContentBlock(type="text"),
+                ),
+                FakeStreamEvent(
+                    type="content_block_delta",
+                    delta=FakeDelta(type="text_delta", text="Done"),
+                ),
+                FakeStreamEvent(type="content_block_stop"),
+            ],
+            final_message=FakeFinalMessage(
+                content=[FakeContentBlock(type="text", text="Done")],
+            ),
+        )
 
     mock_client.messages.stream.side_effect = mock_stream_factory
 

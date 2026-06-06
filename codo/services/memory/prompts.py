@@ -31,6 +31,20 @@ WHAT_NOT_TO_SAVE = """## What NOT to save
 - Do NOT save secrets, API keys, passwords, or credentials
 - Do NOT duplicate existing memories — update them instead
 - Do NOT save unless there is genuinely useful information to retain
+
+### Decline these even though they look save-worthy
+- **Negated / cancelled preferences**: if the user says a past preference no longer
+  matters (e.g. "I used to like vim, now I don't care"), do NOT record a new memory.
+  A removed preference is not a new preference. If a stored memory becomes wrong, edit
+  or delete it — but never create a fresh entry for "no preference".
+- **Session-local / time-bound context**: anything scoped to "today", "right now",
+  "this machine for now", or a single task (e.g. "my network is slow today, use longer
+  timeouts") is transient. Do NOT persist it across sessions.
+- **Facts already discoverable in the repo**: if the user merely points at where
+  something can be read (e.g. "you can see in the README it uses setuptools"), that is
+  already in the codebase. Do NOT copy it into memory.
+- **Pure Q&A / explanations**: the user asking how something works, or you explaining a
+  concept, carries no durable preference or project fact. Do NOT save.
 """
 SAVING_RULES = """**Step 1** — Read before you write. Before creating or editing ANY file, 
 you MUST Read the existing memory files listed in the manifest above. Check if the new information 

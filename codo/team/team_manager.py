@@ -2,9 +2,10 @@
 
 import time
 import uuid
-from typing import Optional
-from .message_types import Message, MessageType
+
 from .mailbox import Mailbox
+from .message_types import Message, MessageType
+
 
 class TeamManager:
     """Manages a team of collaborating agents."""
@@ -13,13 +14,13 @@ class TeamManager:
         """Initialize the team manager."""
         self.mailbox = Mailbox()
         self._agents: dict[str, dict] = {}
-        self._leader_id: Optional[str] = None
+        self._leader_id: str | None = None
 
     def register_agent(
         self,
         agent_id: str,
         role: str,
-        capabilities: Optional[list[str]] = None
+        capabilities: list[str] | None = None
     ) -> None:
         """
         Register an agent with the team.
@@ -52,7 +53,7 @@ class TeamManager:
         if self._leader_id == agent_id:
             self._leader_id = None
 
-    def get_agent(self, agent_id: str) -> Optional[dict]:
+    def get_agent(self, agent_id: str) -> dict | None:
         """
         Get agent information.
 
@@ -73,7 +74,7 @@ class TeamManager:
         """
         return list(self._agents.values())
 
-    def get_leader_id(self) -> Optional[str]:
+    def get_leader_id(self) -> str | None:
         """
         Get the leader agent ID.
 
@@ -88,8 +89,8 @@ class TeamManager:
         to_agent: str,
         message_type: MessageType,
         content: str,
-        metadata: Optional[dict] = None,
-        parent_id: Optional[str] = None
+        metadata: dict | None = None,
+        parent_id: str | None = None
     ) -> Message:
         """
         Send a message between agents.
@@ -122,8 +123,8 @@ class TeamManager:
     async def receive_message(
         self,
         agent_id: str,
-        timeout: Optional[float] = None
-    ) -> Optional[Message]:
+        timeout: float | None = None
+    ) -> Message | None:
         """
         Receive a message for an agent.
 
@@ -159,9 +160,15 @@ class TeamManager:
         if agent_id in self._agents:
             self._agents[agent_id]["status"] = status
 
-_global_team_manager: Optional[TeamManager] = None
+_global_team_manager: TeamManager | None = None
 
 def get_team_manager() -> TeamManager:
+    """
+    获取全局 TeamManager 单例（懒加载）。
+
+    返回:
+        TeamManager: 全局团队管理器实例
+    """
     global _global_team_manager
     if _global_team_manager is None:
         _global_team_manager = TeamManager()

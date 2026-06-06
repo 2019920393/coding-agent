@@ -3,14 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from codo.cli.tui.interaction_types import InteractionOption, InteractionQuestion, InteractionRequest
 from codo.services.tools.permission_checker import create_default_permission_context
 from codo.services.tools.streaming_executor import StreamingToolExecutor, ToolStatus
 from codo.tools.ask_user_question_tool.ask_user_question_tool import AskUserQuestionTool
-from codo.tools.receipts import DiffReceipt, ProposedFileChange
+from codo.tools.receipts import DiffReceipt, GenericReceipt, ProposedFileChange
 from codo.tools.todo_write_tool import TodoWriteTool
 from codo.tools.types import ToolResult
 from codo.types.permissions import PermissionAskDecision
+from codo.types.runtime import InteractionRequest
+
 
 class FakeInteractionBroker:
     def __init__(self) -> None:
@@ -53,6 +54,13 @@ class RuntimeControllerSpy:
 
     async def emit_runtime_event(self, event_type: str, **payload) -> None:
         self.events.append((event_type, payload))
+
+
+class ToolOutputStub:
+    """用于测试回执构造的轻量输出对象。"""
+
+    pass
+
 
 class PermissionTool:
     name = "Bash"
@@ -210,7 +218,7 @@ async def test_executor_transitions_runtime_phase_around_permission_interaction(
 
     phases = [entry["phase"] for entry in tracker.transitions]
     assert "apply_interaction_result" in phases
-    assert phases[-1] == "execute_tools"
+    assert phases[-1] == "collect_tool_results"
 
 @pytest.mark.asyncio
 async def test_executor_emits_question_interaction_and_applies_answers():
@@ -399,3 +407,51 @@ async def test_executor_emits_global_todo_updated_for_session_scope(monkeypatch)
     assert len(todo_events) == 1
     assert todo_events[0]["key"] == "session-main"
     assert todo_events[0]["items"] == todos
+
+
+def test_default_generic_receipts_include_ui_metadata():
+    """
+    验证 workbench 依赖的工具回执元数据。
+
+    工作流：
+    1. 不执行真实工具，只构造工具输出对象。
+    2. 调用 StreamingToolExecutor 的默认回执构造逻辑。
+    3. 断言前端卡片需要的稳定字段存在。
+    """
+    executor = StreamingToolExecutor([], {})
+
+    read_output = ToolOutputStub()
+    read_output.filePath = "src/main.py"
+    read_output.lineCount = 42
+    read_output.size = 2048
+    read_output.encoding = "utf-8"
+    read_output.isPartial = True
+    read_output.content = "print('ok')"
+
+    read_receipt = executor._build_default_receipt(
+        "Read",
+        read_output,
+        {"file_path": "src/main.py", "limit": 20},
+    )
+
+    assert isinstance(read_receipt, GenericReceipt)
+    assert read_receipt.metadata["filePath"] == "src/main.py"
+    assert read_receipt.metadata["lineCount"] == 42
+    assert read_receipt.metadata["isPartial"] is True
+
+    glob_output = ToolOutputStub()
+    glob_output.numFiles = 3
+    glob_output.truncated = False
+    glob_output.durationMs = 12
+    glob_output.filenames = ["a.py", "b.py", "c.py"]
+
+    glob_receipt = executor._build_default_receipt(
+        "Glob",
+        glob_output,
+        {"pattern": "*.py", "path": "src"},
+    )
+
+    assert isinstance(glob_receipt, GenericReceipt)
+    assert glob_receipt.metadata["pattern"] == "*.py"
+    assert glob_receipt.metadata["path"] == "src"
+    assert glob_receipt.metadata["count"] == 3

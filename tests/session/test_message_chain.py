@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from codo.session.storage import SessionStorage
 
+
 def test_message_deduplication():
     """
     测试消息去重功能
@@ -59,7 +60,7 @@ def test_message_deduplication():
             asyncio.run(session.insert_message_chain([msg1, msg2]))
 
             # 读取文件，验证消息只记录了一次
-            with open(session.session_file, 'r', encoding='utf-8') as f:
+            with open(session.session_file, encoding='utf-8') as f:
                 lines = [line.strip() for line in f if line.strip()]
 
             # 应该只有 2 条消息记录（不是 4 条）
@@ -101,7 +102,7 @@ def test_parent_uuid_tracking():
             asyncio.run(session.insert_message_chain(messages))
 
             # 读取文件验证 parent_uuid
-            with open(session.session_file, 'r', encoding='utf-8') as f:
+            with open(session.session_file, encoding='utf-8') as f:
                 records = [json.loads(line.strip()) for line in f if line.strip()]
 
             # 验证消息链结构
@@ -147,7 +148,7 @@ def test_starting_parent_uuid():
             asyncio.run(session.insert_message_chain([msg2], starting_parent_uuid=msg1_uuid))
 
             # 读取文件验证
-            with open(session.session_file, 'r', encoding='utf-8') as f:
+            with open(session.session_file, encoding='utf-8') as f:
                 records = [json.loads(line.strip()) for line in f if line.strip()]
 
             assert records[0]['uuid'] == msg1_uuid
@@ -194,7 +195,7 @@ def test_mixed_new_and_existing_messages():
             asyncio.run(session.insert_message_chain(messages_batch2))
 
             # 读取文件验证
-            with open(session.session_file, 'r', encoding='utf-8') as f:
+            with open(session.session_file, encoding='utf-8') as f:
                 records = [json.loads(line.strip()) for line in f if line.strip()]
 
             # 应该只有 3 条消息（msg2 没有重复记录）
@@ -250,7 +251,7 @@ def test_session_restoration():
             asyncio.run(session2.insert_message_chain([msg3]))
 
             # 验证新消息正确连接到消息链
-            with open(session2.session_file, 'r', encoding='utf-8') as f:
+            with open(session2.session_file, encoding='utf-8') as f:
                 records = [json.loads(line.strip()) for line in f if line.strip()]
 
             msg3_record = next(r for r in records if r['uuid'] == msg3_uuid)
@@ -288,7 +289,7 @@ def test_non_chain_participant_messages():
             asyncio.run(session.insert_message_chain(messages))
 
             # 读取文件验证
-            with open(session.session_file, 'r', encoding='utf-8') as f:
+            with open(session.session_file, encoding='utf-8') as f:
                 records = [json.loads(line.strip()) for line in f if line.strip()]
 
             # 验证 progress 消息的 parent_uuid

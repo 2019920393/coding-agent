@@ -5,8 +5,9 @@
 """
 
 import traceback
-from typing import Optional, Any
 from enum import Enum
+from typing import Any
+
 
 class ToolErrorType(Enum):
     """
@@ -51,7 +52,7 @@ def classify_tool_error(error: Exception) -> str:
         return ToolErrorType.PERMISSION_DENIED.value
     elif isinstance(error, TimeoutError):
         return ToolErrorType.TIMEOUT.value
-    elif isinstance(error, (ConnectionError, OSError)):
+    elif isinstance(error, ConnectionError | OSError):
         return ToolErrorType.NETWORK.value
     elif hasattr(error, '__class__'):
         # 返回错误类名
@@ -123,7 +124,7 @@ def format_tool_error(error: Exception, include_traceback: bool = False) -> str:
 def format_tool_result_error(
     tool_name: str,
     error: Exception,
-    input_data: Optional[Any] = None
+    input_data: Any | None = None
 ) -> str:
     """
     格式化工具结果错误
@@ -198,19 +199,19 @@ def get_error_severity(error: Exception) -> str:
         str: 严重程度 ('low', 'medium', 'high', 'critical')
     """
     # 低严重程度：可恢复的错误
-    if isinstance(error, (TimeoutError, ConnectionError)):
+    if isinstance(error, TimeoutError | ConnectionError):
         return 'low'
 
     # 中等严重程度：常见错误
-    if isinstance(error, (FileNotFoundError, ValueError, TypeError)):
+    if isinstance(error, FileNotFoundError | ValueError | TypeError):
         return 'medium'
 
     # 高严重程度：权限和系统错误
-    if isinstance(error, (PermissionError, OSError)):
+    if isinstance(error, PermissionError | OSError):
         return 'high'
 
     # 严重：中止和未知错误
-    if isinstance(error, (KeyboardInterrupt, SystemExit)):
+    if isinstance(error, KeyboardInterrupt | SystemExit):
         return 'critical'
 
     # 默认：中等
@@ -218,10 +219,7 @@ def get_error_severity(error: Exception) -> str:
 
 class ToolExecutionError(Exception):
     """
-    工具执行错误基类
-
-    [Workflow]
-    用于包装工具执行过程中的错误，提供额外的上下文信息。
+    工具执行错误基类，包装工具执行过程中的错误并提供额外上下文。
     """
 
     def __init__(
@@ -229,42 +227,43 @@ class ToolExecutionError(Exception):
         message: str,
         tool_name: str,
         error_type: str,
-        original_error: Optional[Exception] = None
+        original_error: Exception | None = None
     ):
+        """
+        初始化工具执行错误。
+
+        参数:
+            message: 错误描述
+            tool_name: 发生错误的工具名称
+            error_type: 错误类型字符串，如 "ValidationError"
+            original_error: 原始异常对象（可选）
+        """
         super().__init__(message)
         self.tool_name = tool_name
         self.error_type = error_type
         self.original_error = original_error
 
     def __str__(self) -> str:
+        """返回格式化的错误字符串：[工具名] 错误类型: 错误信息。"""
         return f"[{self.tool_name}] {self.error_type}: {super().__str__()}"
 
 class ToolValidationError(ToolExecutionError):
-    """
-    工具验证错误
+    """工具输入验证错误，用于输入验证失败的情况。"""
 
-    用于输入验证失败的情况。
-    """
-
-    def __init__(self, message: str, tool_name: str, original_error: Optional[Exception] = None):
+    def __init__(self, message: str, tool_name: str, original_error: Exception | None = None):
+        """初始化工具验证错误。"""
         super().__init__(message, tool_name, "ValidationError", original_error)
 
 class ToolPermissionError(ToolExecutionError):
-    """
-    工具权限错误
+    """工具权限错误，用于权限检查失败的情况。"""
 
-    用于权限检查失败的情况。
-    """
-
-    def __init__(self, message: str, tool_name: str, original_error: Optional[Exception] = None):
+    def __init__(self, message: str, tool_name: str, original_error: Exception | None = None):
+        """初始化工具权限错误。"""
         super().__init__(message, tool_name, "PermissionError", original_error)
 
 class ToolTimeoutError(ToolExecutionError):
-    """
-    工具超时错误
+    """工具超时错误，用于工具执行超时的情况。"""
 
-    用于工具执行超时的情况。
-    """
-
-    def __init__(self, message: str, tool_name: str, original_error: Optional[Exception] = None):
+    def __init__(self, message: str, tool_name: str, original_error: Exception | None = None):
+        """初始化工具超时错误。"""
         super().__init__(message, tool_name, "TimeoutError", original_error)

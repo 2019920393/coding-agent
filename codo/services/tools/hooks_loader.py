@@ -27,10 +27,9 @@ hooks 配置格式：
 import json
 import logging
 import os
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from codo.types.hooks import HookConfig, HookEventName
+from codo.types.hooks import HookConfig
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,7 @@ SUPPORTED_HOOK_EVENTS = [
 # 默认 hook 超时（毫秒）
 DEFAULT_HOOK_TIMEOUT_MS = 10 * 60 * 1000  # 10 分钟
 
-def _get_settings_file_path(cwd: str) -> Optional[str]:
+def _get_settings_file_path(cwd: str) -> str | None:
     """
     获取项目设置文件路径
 
@@ -65,7 +64,7 @@ def _get_settings_file_path(cwd: str) -> Optional[str]:
         return project_settings
     return None
 
-def _load_settings_json(file_path: str) -> Optional[Dict[str, Any]]:
+def _load_settings_json(file_path: str) -> dict[str, Any] | None:
     """
     加载 settings.json 文件
 
@@ -84,7 +83,7 @@ def _load_settings_json(file_path: str) -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             content = f.read().strip()
 
         if not content:
@@ -98,9 +97,9 @@ def _load_settings_json(file_path: str) -> Optional[Dict[str, Any]]:
         return None
 
 def _parse_hook_matcher(
-    matcher_config: Dict[str, Any],
+    matcher_config: dict[str, Any],
     event: str,
-) -> List[HookConfig]:
+) -> list[HookConfig]:
     """
     解析单个 hook matcher 配置
 
@@ -158,7 +157,7 @@ def _parse_hook_matcher(
 
     return result
 
-def load_hooks_from_settings(cwd: str) -> Dict[str, List[HookConfig]]:
+def load_hooks_from_settings(cwd: str) -> dict[str, list[HookConfig]]:
     """
     从设置文件加载 hooks 配置
 
@@ -178,7 +177,7 @@ def load_hooks_from_settings(cwd: str) -> Dict[str, List[HookConfig]]:
         格式：{"PreToolUse": [...], "PostToolUse": [...], "Stop": [...]}
     """
     # 初始化结果字典
-    result: Dict[str, List[HookConfig]] = {
+    result: dict[str, list[HookConfig]] = {
         event: [] for event in SUPPORTED_HOOK_EVENTS
     }
 
@@ -224,8 +223,8 @@ def load_hooks_from_settings(cwd: str) -> Dict[str, List[HookConfig]]:
 def get_hooks_for_event(
     cwd: str,
     event: str,
-    tool_name: Optional[str] = None,
-) -> List[HookConfig]:
+    tool_name: str | None = None,
+) -> list[HookConfig]:
     """
     获取指定事件和工具的 hooks
 

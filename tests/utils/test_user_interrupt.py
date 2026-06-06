@@ -3,14 +3,12 @@
 
 """
 
-import asyncio
-import signal
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from codo.query_engine import QueryEngine
 from codo.utils.abort_controller import AbortController, AbortedError, get_abort_message
+
 
 class TestAbortController:
     """AbortController 核心功能测试"""
@@ -69,7 +67,7 @@ class TestAbortController:
             callback_called = True
             callback_reason = reason
 
-        unregister = controller.on_abort(callback)
+        controller.on_abort(callback)
 
         assert callback_called is True
         assert callback_reason == "interrupt"

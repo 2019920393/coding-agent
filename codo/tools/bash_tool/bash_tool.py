@@ -12,21 +12,32 @@ BashTool 实现
 """
 
 import asyncio
-import time
+import logging
 import os
-from typing import Optional, Callable, Any
-from ..base import Tool, ToolUseContext
-from ..types import ToolResult, ValidationResult, ToolCallProgress, ToolProgress
-from .types import BashToolInput, BashToolOutput, BashToolProgress
+import time
+from collections.abc import Callable
+from typing import Any
+
+from codo.constants import (
+    BASH_MAX_OUTPUT_CHARS,
+    BASH_TIMEOUT_DEFAULT_MS,
+    BASH_TIMEOUT_MAX_MS,
+)
 from codo.team import get_task_manager
+
+from ..base import Tool
+from ..types import ToolCallProgress, ToolProgress, ToolResult, ValidationResult
 from .prompt import (
     BASH_TOOL_NAME,
     DESCRIPTION,
-    get_user_facing_name,
+    get_activity_description,
     get_tool_use_summary,
-    get_activity_description
+    get_user_facing_name,
 )
+from .types import BashToolInput, BashToolOutput, BashToolProgress
 from .utils import isReadOnlyCommand
+
+logger = logging.getLogger(__name__)
 
 class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
     """Bash 命令执行工具"""
@@ -34,7 +45,7 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
     def __init__(self):
         """初始化 BashTool，设置工具名称和最大结果大小。"""
         self.name = BASH_TOOL_NAME
-        self.max_result_size_chars = 30000  # 30K chars - Bash 输出通常较大
+        self.max_result_size_chars = BASH_MAX_OUTPUT_CHARS
 
     @property
     def input_schema(self) -> type[BashToolInput]:
@@ -88,14 +99,15 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
         """检测命令是否为只读操作"""
         return isReadOnlyCommand(input_data.command)
 
-    async def validate_input(self, input_data: BashToolInput, context: ToolUseContext) -> ValidationResult:
+    async def validate_input(self, input_data: BashToolInput, context: dict[str, Any]) -> ValidationResult:
         """
         验证输入参数
 
         检查：
         1. 超时时间是否在合理范围内
         2. 命令是否为空
-        3. 权限检查（如果配置）
+        3. 进程保护检查（防止杀掉 Codo 自身进程）
+        4. 权限检查（如果配置）
         """
         # 检查命令是否为空
         if not input_data.command.strip():
@@ -111,14 +123,46 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
                     result=False,
                     message='超时时间不能为负数',
                 )
-            if input_data.timeout > 600000:  # 10 分钟
+            if input_data.timeout > BASH_TIMEOUT_MAX_MS:
                 return ValidationResult(
                     result=False,
-                    message='超时时间不能超过 10 分钟（600000ms）',
+                    message=f'超时时间不能超过 {BASH_TIMEOUT_MAX_MS}ms',
                 )
 
-        # TODO: 权限检查（未来实现）
-        # 目前默认允许所有命令
+        # 进程保护检查：防止杀掉 Codo 自身进程
+        command_lower = input_data.command.lower()
+        is_kill_command = any(cmd in command_lower for cmd in ['taskkill', 'kill ', 'pkill', 'killall'])
+
+        if is_kill_command:
+            # 检查是否可能影响 Codo 进程
+            dangerous_patterns = [
+                'codo',
+                'electron',
+                'ai_bridge',
+                'workbench',
+                'python.*ai_bridge',
+                'node.*workbench',
+            ]
+
+            # 检查命令中是否包含危险模式
+            contains_dangerous_pattern = any(pattern in command_lower for pattern in dangerous_patterns)
+
+            if contains_dangerous_pattern:
+                return ValidationResult(
+                    result=False,
+                    message=(
+                        '⚠️ CRITICAL: This command attempts to kill a Codo-related process.\n'
+                        'Terminating Codo processes will end your current session and destroy your work.\n\n'
+                        'If you\'re trying to resolve a port conflict:\n'
+                        '1. First identify the process: netstat -ano | findstr <port>\n'
+                        '2. If it\'s a Codo process, use an alternate port for your application\n'
+                        '3. If it\'s another process, ask the user for permission before killing it\n\n'
+                        'Command blocked for your safety.'
+                    ),
+                )
+
+            # 即使不包含明显的危险模式，也要警告用户
+            logger.warning(f"Process termination command detected: {input_data.command}")
 
         return ValidationResult(
             result=True,
@@ -127,10 +171,10 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
     async def call(
         self,
         input_data: BashToolInput,
-        context: ToolUseContext,
+        context: dict[str, Any],
         can_use_tool: Callable,
         parent_message: Any,
-        on_progress: Optional[Callable[[ToolCallProgress], None]] = None
+        on_progress: Callable[[ToolCallProgress], None] | None = None
     ) -> ToolResult[BashToolOutput]:
         """
         执行 shell 命令
@@ -144,15 +188,13 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
             工具执行结果
         """
         command = input_data.command
-        timeout_ms = input_data.timeout or 120000
+        timeout_ms = input_data.timeout or BASH_TIMEOUT_DEFAULT_MS
         timeout_sec = timeout_ms / 1000.0
         run_in_background = input_data.run_in_background or False
         cwd = context.get("cwd", os.getcwd())
 
         start_time = time.time()
 
-        # 获取 AbortController（如果有）
-        options = context.get_options()
         abort_controller = context.get("abort_controller")
 
         try:
@@ -165,6 +207,7 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
                         stderr=get_abort_message(abort_controller.get_reason()),
                         exitCode=130,  # SIGINT 退出码
                         command=command,
+                        cwd=cwd,
                         durationMs=0,
                         timedOut=False,
                         background=False
@@ -207,6 +250,7 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
                         stderr='',
                         exitCode=0,
                         command=command,
+                        cwd=cwd,
                         durationMs=0,
                         timedOut=False,
                         background=True,
@@ -264,8 +308,8 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
                         if reason == "abort":
                             try:
                                 process.kill()
-                            except:
-                                pass
+                            except ProcessLookupError:
+                                logger.warning("process already exited before abort kill")
                         # 'interrupt' 时不杀死进程，让它继续运行
 
                     abort_callback_unregister = abort_controller.on_abort(on_abort)
@@ -309,6 +353,7 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
                     stderr=stderr,
                     exitCode=exit_code,
                     command=command,
+                    cwd=cwd,
                     durationMs=duration_ms,
                     timedOut=timed_out,
                     background=False
@@ -325,6 +370,7 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
                     stderr=f'命令执行失败: {str(e)}',
                     exitCode=-1,
                     command=command,
+                    cwd=cwd,
                     durationMs=duration_ms,
                     timedOut=False,
                     background=False
@@ -343,7 +389,7 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
         在后台执行命令并返回结构化结果。
 
         后台任务不依赖前台流式回调，而是一次性收集完整输出，
-        以便后台任务管理器和 TUI 在完成时统一展示。
+        以便后台任务管理器和 Desktop 在完成时统一展示。
         """
         start_time = time.time()
         process = await asyncio.create_subprocess_shell(
@@ -399,7 +445,7 @@ class BashTool(Tool[BashToolInput, BashToolOutput, BashToolProgress]):
         input_data: BashToolInput,
         result: ToolResult[BashToolOutput],
         context: dict,
-    ) -> Optional[Callable[[dict], dict]]:
+    ) -> Callable[[dict], dict] | None:
         """
         获取上下文修改器
 

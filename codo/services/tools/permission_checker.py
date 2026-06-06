@@ -6,41 +6,38 @@
 """
 
 import logging
-from typing import Dict, Any, Optional
 import os
+from typing import Any
 
-# 模块级日志记录器
-logger = logging.getLogger(__name__)
-
+from codo.services.tools.permission_rules import (
+    create_permission_request_message,
+    format_permission_rule_value,
+    get_ask_rule_for_tool,
+    get_deny_rule_for_tool,
+    get_permission_rule_source_display_name,
+    tool_always_allowed_rule,
+)
 from codo.tools.base import Tool, ToolUseContext
 from codo.types.permissions import (
-    PermissionDecision,
     PermissionAllowDecision,
     PermissionAskDecision,
-    PermissionDenyDecision,
-    PermissionResult,
+    PermissionDecision,
     PermissionDecisionReason,
+    PermissionDenyDecision,
     PermissionMode,
     ToolPermissionContext,
     create_allow_decision,
     create_ask_decision,
     create_deny_decision,
-    create_passthrough_result,
 )
-from codo.services.tools.permission_rules import (
-    get_deny_rule_for_tool,
-    get_ask_rule_for_tool,
-    tool_always_allowed_rule,
-    create_permission_request_message,
-    format_permission_rule_value,
-    get_permission_rule_source_display_name,
-)
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # 安全检查（Safety Checks）
 # ============================================================================
 
-def check_path_safety(file_path: str, cwd: str) -> Optional[PermissionAskDecision]:
+def check_path_safety(file_path: str, cwd: str) -> PermissionAskDecision | None:
     """
     检查文件路径安全性
 
@@ -106,7 +103,7 @@ def check_path_safety(file_path: str, cwd: str) -> Optional[PermissionAskDecisio
 async def has_permissions_to_use_tool(
     tool: Tool,
     input_data: Any,
-    context: ToolUseContext | Dict[str, Any],
+    context: dict[str, Any],
 ) -> PermissionDecision:
     """
     检查工具使用权限
@@ -137,10 +134,10 @@ async def has_permissions_to_use_tool(
     Returns:
         PermissionDecision (allow/ask/deny)
     """
-    context = ToolUseContext.coerce(context)
-    permission_context = context.get("permission_context")
+    tool_context = context if isinstance(context, ToolUseContext) else ToolUseContext.from_dict(context)
+    permission_context = tool_context.get("permission_context")
     if not permission_context:
-        raise ValueError("permission_context is required in ToolUseContext")
+        raise ValueError("permission_context is required in execution_context")
 
     if hasattr(input_data, "model_dump"):
         normalized_input_data = input_data.model_dump()
@@ -182,7 +179,7 @@ async def has_permissions_to_use_tool(
         )
 
     # 1c. 工具特定权限检查
-    tool_result = await tool.check_permissions(input_data, context)
+    tool_result = await tool.check_permissions(input_data, tool_context)
 
     # 工具返回 deny
     if tool_result.behavior == "deny":
@@ -214,7 +211,7 @@ async def has_permissions_to_use_tool(
     if "file_path" in normalized_input_data:
         safety_check = check_path_safety(
             normalized_input_data["file_path"],
-            context.get("cwd", "/"),
+            tool_context.get("cwd", "/"),
         )
         if safety_check:
             return safety_check

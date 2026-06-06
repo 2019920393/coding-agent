@@ -10,26 +10,26 @@ StreamingToolExecutor - 流式工具执行器
 """
 
 import asyncio
-import time
 import logging
 import os
+import time
+from collections.abc import AsyncGenerator, Callable
+from dataclasses import dataclass, field
 from enum import Enum
-from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import Dict, List, Optional, Any, Callable, AsyncGenerator
+from typing import Any
 
-from codo.tools.receipts import CommandReceipt, GenericReceipt, receipt_to_dict, render_receipt_for_model
+from codo.constants import TOOL_EXECUTION_TIMEOUT_SECONDS
 from codo.tools.base import ToolUseContext
+from codo.tools.receipts import (
+    CommandReceipt,
+    GenericReceipt,
+    receipt_to_dict,
+    render_receipt_for_model,
+)
+from codo.types.runtime import InteractionOption, InteractionQuestion, InteractionRequest
+from codo.utils.serialize import serialize_ui_metadata
 
 logger = logging.getLogger(__name__)
-
-def _serialize_ui_metadata(value: Any) -> Any:
-    if is_dataclass(value):
-        return asdict(value)
-    if isinstance(value, list):
-        return [_serialize_ui_metadata(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _serialize_ui_metadata(item) for key, item in value.items()}
-    return value
 
 # ============================================================================
 # 数据结构
@@ -52,20 +52,20 @@ class TrackedTool:
 
     """
     id: str                                          # tool_use_id
-    block: Dict[str, Any]                           # tool_use block
-    assistant_message: Dict[str, Any]               # 包含此 tool_use 的 assistant message
+    block: dict[str, Any]                           # tool_use block
+    assistant_message: dict[str, Any]               # 包含此 tool_use 的 assistant message
     status: ToolStatus                              # 当前状态
     is_concurrency_safe: bool                       # 是否并发安全
-    promise: Optional[asyncio.Task] = None          # 执行任务
-    results: List[Dict[str, Any]] = field(default_factory=list)  # 工具结果消息
-    pending_progress: List[Dict[str, Any]] = field(default_factory=list)  # 待返回的进度消息
-    context_modifiers: List[Callable] = field(default_factory=list)  # Context 修改器
-    duration: Optional[float] = None                # 执行时长（秒）
-    start_time: Optional[float] = None              # 开始时间
-    receipt: Optional[Any] = None                   # 结构化收据
-    staged_changes: List[Any] = field(default_factory=list)
-    audit_events: List[Any] = field(default_factory=list)
-    result_summary: Optional[str] = None
+    promise: asyncio.Task | None = None          # 执行任务
+    results: list[dict[str, Any]] = field(default_factory=list)  # 工具结果消息
+    pending_progress: list[dict[str, Any]] = field(default_factory=list)  # 待返回的进度消息
+    context_modifiers: list[Callable] = field(default_factory=list)  # Context 修改器
+    duration: float | None = None                # 执行时长（秒）
+    start_time: float | None = None              # 开始时间
+    receipt: Any | None = None                   # 结构化收据
+    staged_changes: list[Any] = field(default_factory=list)
+    audit_events: list[Any] = field(default_factory=list)
+    result_summary: str | None = None
 
 @dataclass
 class ToolUpdate:
@@ -73,16 +73,16 @@ class ToolUpdate:
 
     用于从 StreamingToolExecutor 返回结果
     """
-    message: Optional[Dict[str, Any]] = None        # 完整的消息对象
-    context_modifier: Optional[Callable] = None     # Context 修改器
-    tool_use_id: Optional[str] = None               # tool_use_id
-    receipt: Optional[Any] = None                   # 结构化收据
-    staged_changes: List[Any] = field(default_factory=list)
-    audit_events: List[Any] = field(default_factory=list)
-    content: Optional[str] = None                   # 结果内容
+    message: dict[str, Any] | None = None        # 完整的消息对象
+    context_modifier: Callable | None = None     # Context 修改器
+    tool_use_id: str | None = None               # tool_use_id
+    receipt: Any | None = None                   # 结构化收据
+    staged_changes: list[Any] = field(default_factory=list)
+    audit_events: list[Any] = field(default_factory=list)
+    content: str | None = None                   # 结果内容
     is_error: bool = False                          # 是否是错误
-    status: Optional[str] = None                    # 状态
-    duration: Optional[float] = None                # 执行时长
+    status: str | None = None                    # 状态
+    duration: float | None = None                # 执行时长
 
 # ============================================================================
 # StreamingToolExecutor
@@ -104,8 +104,8 @@ class StreamingToolExecutor:
 
     def __init__(
         self,
-        tools: List[Any],
-        context: Dict[str, Any] | ToolUseContext,
+        tools: list[Any],
+        context: dict[str, Any],
         max_concurrency: int = 10
     ):
         """
@@ -117,11 +117,11 @@ class StreamingToolExecutor:
             max_concurrency: 最大并发数
         """
         self.tools_registry = tools
-        self.context = ToolUseContext.coerce(context)
+        self.context = context if isinstance(context, ToolUseContext) else ToolUseContext.from_dict(context)
         self.max_concurrency = max_concurrency
 
         # 跟踪的工具
-        self.tools: List[TrackedTool] = []
+        self.tools: list[TrackedTool] = []
 
         # 错误状态（用于 sibling abort）
         self.has_errored = False
@@ -138,8 +138,8 @@ class StreamingToolExecutor:
 
     def add_tool(
         self,
-        block: Dict[str, Any],
-        assistant_message: Dict[str, Any]
+        block: dict[str, Any],
+        assistant_message: dict[str, Any]
     ) -> None:
         """
         添加工具到执行队列并尝试启动（立即执行版本）
@@ -163,8 +163,8 @@ class StreamingToolExecutor:
 
     def register_tool(
         self,
-        block: Dict[str, Any],
-        assistant_message: Dict[str, Any]
+        block: dict[str, Any],
+        assistant_message: dict[str, Any]
     ) -> None:
         """
         仅注册工具到队列，不立即启动执行
@@ -277,11 +277,21 @@ class StreamingToolExecutor:
             ),
             status="running",
         )
+        self._emit_trace(
+            "tool.started",
+            {
+                "tool_use_id": tool.id,
+                "tool_name": tool.block.get("name", "Tool"),
+                "full_input": tool.block.get("input", {}) or {},
+                "is_concurrency_safe": tool.is_concurrency_safe,
+            },
+        )
 
         tool.promise = asyncio.create_task(self._execute_tool_with_abort(tool))
 
         # 完成后继续处理队列
         def on_done(task):
+            """工具任务完成回调：触发队列继续处理下一个工具。"""
             asyncio.create_task(self._process_queue())
 
         tool.promise.add_done_callback(on_done)
@@ -310,7 +320,12 @@ class StreamingToolExecutor:
             return
 
         # 执行工具，同时监控 abort 事件
-        execute_task = asyncio.create_task(self._execute_tool(tool))
+        execute_task = asyncio.create_task(
+            asyncio.wait_for(
+                self._execute_tool(tool),
+                timeout=TOOL_EXECUTION_TIMEOUT_SECONDS,
+            )
+        )
         abort_task = asyncio.create_task(self.sibling_abort_event.wait())
 
         done, pending = await asyncio.wait(
@@ -339,6 +354,32 @@ class StreamingToolExecutor:
                 status="cancelled",
                 content="sibling_error",
             )
+            return
+
+        if execute_task in done:
+            try:
+                await execute_task
+            except TimeoutError as exc:
+                logger.warning(
+                    "Tool timed out after %s seconds: %s",
+                    TOOL_EXECUTION_TIMEOUT_SECONDS,
+                    tool.block.get("name", "Tool"),
+                )
+                tool.results = [self._format_tool_error(tool, exc)]
+                tool.status = ToolStatus.COMPLETED
+                tool.duration = time.time() - tool.start_time if tool.start_time else 0
+                await self._emit_runtime_event(
+                    "tool_completed",
+                    tool_use_id=tool.id,
+                    tool_name=tool.block.get("name", "Tool"),
+                    status="failed",
+                    content="timed out",
+                )
+            except Exception as exc:
+                logger.error("Tool execution failed: %s", tool.block.get("name", "Tool"), exc_info=True)
+                tool.results = [self._format_tool_error(tool, exc)]
+                tool.status = ToolStatus.COMPLETED
+                tool.duration = time.time() - tool.start_time if tool.start_time else 0
 
     async def _execute_tool(self, tool: TrackedTool) -> None:
         """
@@ -368,6 +409,15 @@ class StreamingToolExecutor:
                 # Pydantic 验证失败，返回友好错误给模型
                 error_message = f"Invalid tool input: {e}"
                 logger.warning(f"Tool input schema validation failed: {tool.block['name']}, error={error_message}")
+                self._emit_trace(
+                    "tool.input.invalid",
+                    {
+                        "tool_use_id": tool.id,
+                        "tool_name": tool.block.get("name", "Tool"),
+                        "full_input": tool.block.get("input", {}) or {},
+                        "error": error_message,
+                    },
+                )
                 tool.results = [self._format_tool_error(tool, ValueError(error_message))]
                 tool.status = ToolStatus.COMPLETED
                 tool.duration = time.time() - tool.start_time if tool.start_time else 0
@@ -390,6 +440,15 @@ class StreamingToolExecutor:
             # ================================================================
             permission_decision = await self._check_tool_permission(
                 tool_instance, tool_input, tool
+            )
+            self._emit_trace(
+                "tool.permission.decided",
+                {
+                    "tool_use_id": tool.id,
+                    "tool_name": tool.block.get("name", "Tool"),
+                    "decision": permission_decision,
+                    "full_input": tool.block.get("input", {}) or {},
+                },
             )
 
             if permission_decision == "deny":
@@ -420,6 +479,12 @@ class StreamingToolExecutor:
 
             # 进度回调
             def on_progress(progress):
+                """
+                工具进度回调：将进度数据追加到 pending_progress 队列并通知消费方。
+
+                参数:
+                    progress: 进度数据，可以是字典（含 data 字段）或其他类型
+                """
                 # 将进度消息添加到 pending_progress
                 # progress 可能是字典或其他类型，统一处理
                 data = progress.get("data") if isinstance(progress, dict) else progress
@@ -461,7 +526,11 @@ class StreamingToolExecutor:
             if not is_error and tool.staged_changes:
                 tool.receipt = await self._finalize_staged_changes(tool, tool.staged_changes)
             else:
-                tool.receipt = self._build_tool_receipt(tool.block["name"], result)
+                tool.receipt = self._build_tool_receipt(
+                    tool.block["name"],
+                    result,
+                    tool.block.get("input", {}) or {},
+                )
             tool.result_summary = (
                 getattr(tool.receipt, "summary", None)
                 if tool.receipt is not None
@@ -492,10 +561,25 @@ class StreamingToolExecutor:
                 status="error" if is_error else "completed",
                 content=tool.result_summary or "",
                 receipt=receipt_to_dict(tool.receipt) if tool.receipt is not None else None,
-                audit_events=_serialize_ui_metadata(tool.audit_events),
+                audit_events=serialize_ui_metadata(tool.audit_events),
+            )
+            self._emit_trace(
+                "tool.completed",
+                {
+                    "tool_use_id": tool.id,
+                    "tool_name": tool.block.get("name", "Tool"),
+                    "status": "error" if is_error else "completed",
+                    "duration_ms": round((tool.duration or 0) * 1000, 2),
+                    "is_error": is_error,
+                    "full_input": tool.block.get("input", {}) or {},
+                    "full_output": getattr(result, "data", None),
+                    "error": getattr(result, "error", None),
+                    "summary": tool.result_summary or "",
+                    "receipt": receipt_to_dict(tool.receipt) if tool.receipt is not None else None,
+                },
             )
             if tool.block.get("name") == "TodoWrite":
-                options = self.context.get_options()
+                options = self.context.get("options", {})
                 app_state = options.get("app_state", {}) if isinstance(options, dict) else {}
                 todos = app_state.get("todos", {}) if isinstance(app_state, dict) else {}
                 todo_key = str(
@@ -509,7 +593,7 @@ class StreamingToolExecutor:
                     await self._emit_runtime_event(
                         "todo_updated",
                         key=todo_key,
-                        items=_serialize_ui_metadata(todos.get(todo_key, [])),
+                        items=serialize_ui_metadata(todos.get(todo_key, [])),
                         tool_use_id=tool.id,
                     )
 
@@ -536,7 +620,7 @@ class StreamingToolExecutor:
                 content=str(e),
             )
 
-    def get_completed_results(self) -> List[ToolUpdate]:
+    def get_completed_results(self) -> list[ToolUpdate]:
         """
         获取已完成的结果（非阻塞）
 
@@ -645,6 +729,7 @@ class StreamingToolExecutor:
     # ========== 辅助方法 ==========
 
     async def _emit_runtime_event(self, event_type: str, **payload: Any) -> None:
+        """向运行时控制器发射事件（如 tool_started、tool_completed 等）。"""
         runtime_controller = self.context.get("runtime_controller")
         if runtime_controller is None:
             return
@@ -652,7 +737,11 @@ class StreamingToolExecutor:
         if callable(emit):
             await emit(event_type, **payload)
 
+    def _emit_trace(self, event_type: str, payload: dict[str, Any]) -> None:
+        logger.debug("tool trace %s: %s", event_type, payload)
+
     async def _transition_phase(self, phase: str, **kwargs: Any) -> None:
+        """通知阶段追踪器切换执行阶段（如 wait_interaction、apply_interaction_result）。"""
         tracker = self.context.get("phase_tracker")
         if tracker is None:
             return
@@ -660,7 +749,13 @@ class StreamingToolExecutor:
         if callable(transition):
             await transition(phase, **kwargs)
 
-    def _active_tool_ids(self) -> List[str]:
+    def _active_tool_ids(self) -> list[str]:
+        """
+        返回当前处于活动状态（QUEUED/EXECUTING/WAITING_INTERACTION）的工具 ID 列表。
+
+        返回:
+            List[str]: 活动工具 ID 列表，如 ["toolu_abc", "toolu_def"]
+        """
         return [
             tool.id
             for tool in self.tools
@@ -677,9 +772,28 @@ class StreamingToolExecutor:
         request: Any,
         interaction_broker: Any,
         *,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Any:
-        serialized_request = _serialize_ui_metadata(request)
+        """
+        向运行时交互代理发起交互请求（如权限确认），并在等待期间更新阶段状态。
+
+        [Workflow]
+        1. 序列化交互请求为可 JSON 化格式
+        2. 将工具状态切换为 WAITING_INTERACTION
+        3. 通知阶段追踪器进入 wait_interaction 阶段
+        4. 等待 interaction_broker.request() 返回用户响应
+        5. finally 块中恢复工具状态为 EXECUTING 并切换到 apply_interaction_result 阶段
+
+        参数:
+            tool: 正在等待交互的工具
+            request: 交互请求对象（权限请求、问题等）
+            interaction_broker: 交互代理，提供 request() 方法
+            metadata: 额外的阶段元数据
+
+        返回:
+            Any: 用户的响应结果
+        """
+        serialized_request = serialize_ui_metadata(request)
         tool.status = ToolStatus.WAITING_INTERACTION
         await self._transition_phase(
             "wait_interaction",
@@ -700,14 +814,14 @@ class StreamingToolExecutor:
                 metadata=metadata or {},
             )
             await self._transition_phase(
-                "execute_tools",
+                "collect_tool_results",
                 pending_interaction=None,
                 active_tool_ids=self._active_tool_ids(),
                 resume_target=tool.id,
                 metadata={"tool_id": tool.id, **(metadata or {})},
             )
 
-    async def _collect_user_answers(self, tool_input: Any) -> Optional[Dict[str, str]]:
+    async def _collect_user_answers(self, tool_input: Any) -> dict[str, str] | None:
         """
         在终端显示问题并收集用户答案
 
@@ -731,9 +845,7 @@ class StreamingToolExecutor:
         if interaction_broker is None:
             raise RuntimeError("interaction_broker is required for AskUserQuestion")
 
-        from codo.cli.tui.interaction_types import InteractionOption, InteractionQuestion, InteractionRequest
-
-        interaction_questions: List[InteractionQuestion] = []
+        interaction_questions: list[InteractionQuestion] = []
         for index, question in enumerate(questions, 1):
             raw_options = getattr(question, "options", None)
             if raw_options is None and isinstance(question, dict):
@@ -831,7 +943,6 @@ class StreamingToolExecutor:
         """
         try:
             from codo.services.tools.permission_checker import has_permissions_to_use_tool
-            from codo.types.permissions import PermissionMode
 
             # 获取权限上下文
             permission_context = self.context.get("permission_context")
@@ -880,7 +991,7 @@ class StreamingToolExecutor:
                     answers = await self._collect_user_answers(tool_input)
                     if answers is None:
                         # 用户拒绝回答
-                        logger.info(f"[Permission] User declined to answer questions")
+                        logger.info("[Permission] User declined to answer questions")
                         return "deny"
                     # 把答案注入到 tool_input
                     tool_input.answers = answers
@@ -892,7 +1003,6 @@ class StreamingToolExecutor:
                 if interaction_broker is None:
                     raise RuntimeError("interaction_broker is required for permission prompts")
 
-                from codo.cli.tui.interaction_types import InteractionOption, InteractionRequest
                 from codo.services.tools.permission_prompt import (
                     PermissionChoice,
                     apply_session_allow_rule,
@@ -953,14 +1063,14 @@ class StreamingToolExecutor:
             )
             return "abort"
 
-    def _find_tool(self, name: str) -> Optional[Any]:
+    def _find_tool(self, name: str) -> Any | None:
         """根据名称查找工具"""
         for tool in self.tools_registry:
             if tool.name == name:
                 return tool
         return None
 
-    def _check_concurrency_safety(self, tool: Any, input_data: Dict) -> bool:
+    def _check_concurrency_safety(self, tool: Any, input_data: dict) -> bool:
         """检查工具是否并发安全"""
         try:
             if hasattr(tool, 'is_concurrency_safe'):
@@ -971,7 +1081,8 @@ class StreamingToolExecutor:
                         return bool(tool.is_concurrency_safe())
                 return tool.is_concurrency_safe
             return False
-        except:
+        except (AttributeError, TypeError):
+            logger.debug("failed to inspect tool concurrency safety", exc_info=True)
             return False
 
     def _get_tool_description(self, tool: TrackedTool) -> str:
@@ -1005,7 +1116,7 @@ class StreamingToolExecutor:
         self,
         tool: TrackedTool,
         reason: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         创建 synthetic error 消息
 
@@ -1030,7 +1141,7 @@ class StreamingToolExecutor:
             }],
         }
 
-    def _create_tool_not_found_error(self, block: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_tool_not_found_error(self, block: dict[str, Any]) -> dict[str, Any]:
         """创建工具未找到错误"""
         return {
             "role": "user",
@@ -1044,7 +1155,7 @@ class StreamingToolExecutor:
             }],
         }
 
-    def _format_tool_result(self, tool: TrackedTool, result: Any) -> Dict[str, Any]:
+    def _format_tool_result(self, tool: TrackedTool, result: Any) -> dict[str, Any]:
         """
         格式化工具结果为消息
 
@@ -1070,19 +1181,52 @@ class StreamingToolExecutor:
                 "content": content,
                 "is_error": is_error,
                 "receipt": receipt_to_dict(tool.receipt) if tool.receipt is not None else None,
-                "audit_events": _serialize_ui_metadata(tool.audit_events),
+                "audit_events": serialize_ui_metadata(tool.audit_events),
             }],
         }
 
-    def _build_tool_receipt(self, tool_name: str, result: Any) -> Optional[Any]:
+    def _build_tool_receipt(
+        self,
+        tool_name: str,
+        result: Any,
+        input_data: dict[str, Any],
+    ) -> Any | None:
+        """
+        构建工具执行回执：优先使用 result.receipt，其次调用 _build_default_receipt。
+
+        参数:
+            tool_name: 工具名称
+            result: 工具执行结果对象
+            input_data: 工具输入参数，用于把 pattern/path 等事实写入 UI 元数据
+
+        返回:
+            ToolReceipt | None: 回执对象，执行出错时返回 None
+        """
         receipt = getattr(result, "receipt", None)
         if receipt is not None:
             return receipt
         if getattr(result, "error", None):
             return None
-        return self._build_default_receipt(tool_name, result.data)
+        return self._build_default_receipt(tool_name, result.data, input_data)
 
-    def _build_tool_activity_summary(self, tool_name: str, input_data: Dict[str, Any]) -> str:
+    def _build_tool_activity_summary(self, tool_name: str, input_data: dict[str, Any]) -> str:
+        """
+        根据工具名称和输入参数生成活动描述文本（用于 spinner 展示）。
+
+        按工具类型生成不同格式：
+        - Read: "Reading <filename>"
+        - Glob: "Scanning <path> for <pattern>"
+        - Grep: "Searching <path> for <pattern>"
+        - Bash: "Running <command>"
+        - 其他: 原始输入字符串
+
+        参数:
+            tool_name: 工具名称
+            input_data: 工具输入参数字典
+
+        返回:
+            str: 活动描述文本，如 "Reading main.py" 或 "Running git status"
+        """
         key = str(tool_name or "").strip().lower()
 
         if key == "read":
@@ -1115,10 +1259,48 @@ class StreamingToolExecutor:
                 summary = summary[:57].rstrip() + "..."
             return f"Running {summary}" if summary else "Running command"
 
-        return str(input_data or "")
+        if key in ("edit", "write", "notebookedit", "multiedit"):
+            file_path = str(input_data.get("file_path", "") or input_data.get("filePath", "") or "")
+            filename = os.path.basename(file_path.replace("\\", "/")) or file_path
+            verb = "Writing" if key == "write" else "Editing"
+            return f"{verb} {filename}" if filename else f"{verb} file"
 
-    def _build_default_receipt(self, tool_name: str, data: Any) -> Optional[Any]:
+        if key == "todowrite":
+            todos = input_data.get("todos")
+            count = len(todos) if isinstance(todos, list) else 0
+            return f"Updating todo list ({count})" if count else "Updating todo list"
+
+        # 兜底：绝不把 input dict 的 repr 直接吐给 UI（会漏出 {'file_path': ...} 这种）。
+        file_path = str(input_data.get("file_path", "") or "") if isinstance(input_data, dict) else ""
+        if file_path:
+            filename = os.path.basename(file_path.replace("\\", "/")) or file_path
+            return f"{tool_name} {filename}"
+        return tool_name or "Running tool"
+
+    def _build_default_receipt(
+        self,
+        tool_name: str,
+        data: Any,
+        input_data: dict[str, Any] | None = None,
+    ) -> Any | None:
+        """
+        为没有显式 receipt 的工具构建默认回执。
+
+        工作流：
+        1. Bash 使用 CommandReceipt，前端按命令回执展示。
+        2. 读/搜/Todo/Skill 使用 GenericReceipt，但写入 metadata。
+        3. metadata 只放稳定事实字段，避免前端解析自然语言摘要。
+
+        参数:
+            tool_name: 工具名称
+            data: 工具输出数据对象
+            input_data: 工具输入参数
+
+        返回:
+            ToolReceipt | None: 构建的回执，无法构建时返回 None
+        """
         key = str(tool_name or "").strip().lower()
+        tool_input = input_data or {}
 
         if key == "bash":
             if data is None:
@@ -1126,6 +1308,7 @@ class StreamingToolExecutor:
             background = bool(getattr(data, "background", False))
             task_id = str(getattr(data, "taskId", "") or "")
             command = str(getattr(data, "command", "") or "")
+            cwd = str(getattr(data, "cwd", "") or "")
             exit_code = int(getattr(data, "exitCode", 0) or 0)
             stdout = str(getattr(data, "stdout", "") or "")
             stderr = str(getattr(data, "stderr", "") or "")
@@ -1142,6 +1325,7 @@ class StreamingToolExecutor:
                 kind="command",
                 summary=summary,
                 command=command,
+                cwd=cwd,
                 exit_code=exit_code,
                 stdout=stdout,
                 stderr=stderr,
@@ -1151,42 +1335,98 @@ class StreamingToolExecutor:
             file_path = str(getattr(data, "filePath", "") or "")
             filename = os.path.basename(file_path.replace("\\", "/")) or file_path or "file"
             partial = bool(getattr(data, "isPartial", False))
-            summary = f"Read {filename}{' (partial)' if partial else ''}"
+            line_count = int(getattr(data, "lineCount", 0) or 0)
+            size_bytes = int(getattr(data, "size", 0) or 0)
+            encoding = str(getattr(data, "encoding", "") or "")
+            summary_parts = [f"Read {filename}"]
+            if line_count > 0:
+                summary_parts.append(f"{line_count} lines")
+            if partial:
+                summary_parts.append("partial")
             return GenericReceipt(
                 kind="generic",
-                summary=summary,
+                summary=" · ".join(summary_parts),
                 body=self._extract_tool_content(tool_name, data),
+                metadata={
+                    "filePath": file_path,
+                    "lineCount": line_count,
+                    "sizeBytes": size_bytes,
+                    "encoding": encoding,
+                    "isPartial": partial,
+                },
             )
 
         if key == "glob":
             num_files = int(getattr(data, "numFiles", 0) or 0)
             truncated = bool(getattr(data, "truncated", False))
-            summary = f"Matched {num_files} files" if num_files else "Matched files"
+            duration_ms = int(getattr(data, "durationMs", 0) or 0)
+            pattern = str(tool_input.get("pattern", "") or "")
+            search_path = str(tool_input.get("path", "") or ".")
+            summary = f"Matched {num_files} files"
+            if pattern:
+                summary = f"{summary} for {pattern}"
             if truncated:
                 summary = f"{summary} (truncated)"
             return GenericReceipt(
                 kind="generic",
                 summary=summary,
                 body=self._extract_tool_content(tool_name, data),
+                metadata={
+                    "pattern": pattern,
+                    "path": search_path,
+                    "count": num_files,
+                    "truncated": truncated,
+                    "durationMs": duration_ms,
+                },
             )
 
         if key == "grep":
             num_matches = int(getattr(data, "numMatches", 0) or 0)
             truncated = bool(getattr(data, "truncated", False))
-            summary = f"Found {num_matches} matches" if num_matches else "Found matches"
+            duration_ms = int(getattr(data, "durationMs", 0) or 0)
+            pattern = str(tool_input.get("pattern", "") or "")
+            search_path = str(tool_input.get("path", "") or ".")
+            glob_filter = str(tool_input.get("glob", "") or "")
+            output_mode = str(tool_input.get("output_mode", "") or "files_with_matches")
+            summary = f"Found {num_matches} matches"
+            if pattern:
+                summary = f"{summary} for {pattern}"
             if truncated:
                 summary = f"{summary} (truncated)"
             return GenericReceipt(
                 kind="generic",
                 summary=summary,
                 body=self._extract_tool_content(tool_name, data),
+                metadata={
+                    "pattern": pattern,
+                    "path": search_path,
+                    "glob": glob_filter,
+                    "outputMode": output_mode,
+                    "count": num_matches,
+                    "truncated": truncated,
+                    "durationMs": duration_ms,
+                },
             )
 
         if key == "todowrite":
+            new_todos = list(getattr(data, "newTodos", []) or [])
+            counts = self._count_todo_statuses(new_todos)
             return GenericReceipt(
                 kind="generic",
-                summary="Updated todo list",
+                summary=(
+                    f"Updated todo list · {counts['inProgress']} doing · "
+                    f"{counts['pending']} pending · {counts['completed']} done"
+                ),
                 body=self._extract_tool_content(tool_name, data),
+                metadata={
+                    "total": len(new_todos),
+                    "pending": counts["pending"],
+                    "inProgress": counts["inProgress"],
+                    "completed": counts["completed"],
+                    "verificationNudgeNeeded": bool(
+                        getattr(data, "verificationNudgeNeeded", False)
+                    ),
+                },
             )
 
         if key == "skill":
@@ -1196,6 +1436,7 @@ class StreamingToolExecutor:
             source_path = str(getattr(data, "sourcePath", "") or "").strip()
             allowed_tools = list(getattr(data, "allowedTools", []) or [])
             model_name = str(getattr(data, "model", "") or "").strip()
+            status = str(getattr(data, "status", "") or "inline").strip()
             body_parts: list[str] = []
             if description:
                 body_parts.append(description)
@@ -1209,14 +1450,45 @@ class StreamingToolExecutor:
                 body_parts.append(prompt_text)
             return GenericReceipt(
                 kind="generic",
-                summary=f"Loaded skill /{command_name}",
+                summary=f"Loaded skill /{command_name} · {status}",
                 body="\n\n".join(part for part in body_parts if part).strip(),
+                metadata={
+                    "commandName": command_name,
+                    "status": status,
+                    "model": model_name,
+                    "sourcePath": source_path,
+                    "allowedTools": ", ".join(allowed_tools),
+                },
             )
 
         summary = self._extract_tool_content(tool_name, data)
         return GenericReceipt(kind="generic", summary=summary, body=summary)
 
-    async def _finalize_staged_changes(self, tool: TrackedTool, staged_changes: List[Any]) -> Optional[Any]:
+    def _count_todo_statuses(self, todos: list[Any]) -> dict[str, int]:
+        """
+        统计 TodoWrite 输出里的任务状态。
+
+        工作流：
+        1. TodoItem 可能是 Pydantic 对象，也可能已被序列化成 dict。
+        2. 只统计协议内的三种状态，其余值归入 pending，避免 UI 状态散乱。
+        """
+        counts = {"pending": 0, "inProgress": 0, "completed": 0}
+        for todo in todos:
+            raw_status = (
+                todo.get("status")
+                if isinstance(todo, dict)
+                else getattr(todo, "status", "pending")
+            )
+            status = str(getattr(raw_status, "value", raw_status) or "pending")
+            if status == "in_progress":
+                counts["inProgress"] += 1
+            elif status == "completed":
+                counts["completed"] += 1
+            else:
+                counts["pending"] += 1
+        return counts
+
+    async def _finalize_staged_changes(self, tool: TrackedTool, staged_changes: list[Any]) -> Any | None:
         """
         审阅并提交 staged changes，返回最终收据。
 
@@ -1228,10 +1500,9 @@ class StreamingToolExecutor:
             return None
 
         from codo.services.tools.execution_manager import ExecutionManager
-        from codo.cli.tui.interaction_types import InteractionOption, InteractionRequest
 
         manager = ExecutionManager()
-        receipts: List[Any] = []
+        receipts: list[Any] = []
         interaction_broker = self.context.get("interaction_broker")
         if interaction_broker is None:
             raise RuntimeError("interaction_broker is required for staged change review")
@@ -1352,12 +1623,25 @@ class StreamingToolExecutor:
             return getattr(data, "result", str(data))
 
         elif tool_name == "TodoWrite":
-            # TodoWrite: 返回成功消息
-            return (
-                "Todos have been modified successfully. "
-                "Ensure that you continue to use the todo list to track your progress. "
-                "Please proceed with the current tasks if applicable"
-            )
+            # TodoWrite: 返回新的任务列表，供模型和 UI 展开区复核。
+            new_todos = list(getattr(data, "newTodos", []) or [])
+            if not new_todos:
+                return "Todo list is empty."
+            lines: list[str] = []
+            for index, todo in enumerate(new_todos, start=1):
+                raw_status = (
+                    todo.get("status")
+                    if isinstance(todo, dict)
+                    else getattr(todo, "status", "pending")
+                )
+                status = str(getattr(raw_status, "value", raw_status) or "pending")
+                content = (
+                    str(todo.get("content", ""))
+                    if isinstance(todo, dict)
+                    else str(getattr(todo, "content", ""))
+                )
+                lines.append(f"{index}. [{status}] {content}")
+            return "\n".join(lines)
 
         elif tool_name == "Skill":
             prompt_text = str(getattr(data, "prompt", "") or "").strip()
@@ -1382,7 +1666,7 @@ class StreamingToolExecutor:
 
         return str(data)
 
-    def _format_tool_error(self, tool: TrackedTool, error: Exception) -> Dict[str, Any]:
+    def _format_tool_error(self, tool: TrackedTool, error: Exception) -> dict[str, Any]:
         """
         格式化工具错误为消息
 

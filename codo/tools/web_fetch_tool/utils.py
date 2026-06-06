@@ -1,24 +1,23 @@
 """WebFetchTool 工具函数"""
 import time
-from typing import Optional, Tuple
 from urllib.parse import urlparse, urlunparse
+
 import httpx
 
 from .constants import (
-    MAX_URL_LENGTH,
-    FETCH_TIMEOUT_MS,
-    MAX_HTTP_CONTENT_LENGTH,
-    MAX_REDIRECTS,
-    USER_AGENT,
     ACCEPT_HEADER,
-    MAX_MARKDOWN_LENGTH,
     CACHE_TTL_MS,
+    MAX_HTTP_CONTENT_LENGTH,
+    MAX_MARKDOWN_LENGTH,
+    MAX_REDIRECTS,
+    MAX_URL_LENGTH,
+    USER_AGENT,
 )
 
 # 简单的内存缓存 {url: (content, timestamp, metadata)}
 _cache = {}
 
-def validate_url(url: str) -> Tuple[bool, Optional[str], str]:
+def validate_url(url: str) -> tuple[bool, str | None, str]:
     """验证 URL 格式
 
     Returns:
@@ -77,7 +76,7 @@ def is_same_origin_redirect(from_url: str, to_url: str) -> bool:
     except Exception:
         return False
 
-async def fetch_url_with_redirects(url: str, timeout: int = 60) -> Tuple[str, int, str, int, str]:
+async def fetch_url_with_redirects(url: str, timeout: int = 60) -> tuple[str, int, str, int, str]:
     """抓取 URL 内容，手动处理重定向
 
     Returns:
@@ -139,7 +138,7 @@ async def fetch_url_with_redirects(url: str, timeout: int = 60) -> Tuple[str, in
 
         raise ValueError(f"Too many redirects (max {MAX_REDIRECTS})")
 
-def get_cached_fetch(url: str) -> Optional[Tuple[str, dict]]:
+def get_cached_fetch(url: str) -> tuple[str, dict] | None:
     """获取缓存的抓取结果
 
     Returns:

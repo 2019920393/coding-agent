@@ -11,8 +11,10 @@
 这些类型被工具基类和具体工具实现使用。
 """
 
-from typing import TypeVar, Generic, Optional, Dict, Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Any, Generic, TypeVar
+
 from pydantic import BaseModel
 
 from .receipts import AuditLogEvent, ProposedFileChange, ToolReceipt
@@ -58,14 +60,14 @@ class ToolResult(Generic[OutputT]):
     示例（失败）:
         ToolResult(error="文件不存在: /tmp/test.py")
     """
-    data: Optional[OutputT] = None
-    error: Optional[str] = None
-    receipt: Optional[ToolReceipt] = None  # 用于 UI 展示和日志
+    data: OutputT | None = None
+    error: str | None = None
+    receipt: ToolReceipt | None = None  # 用于 UI 展示和日志
     staged_changes: list[ProposedFileChange] = field(default_factory=list)
     audit_events: list[AuditLogEvent] = field(default_factory=list)
-    new_messages: Optional[list] = None   # 工具可以向对话中注入新消息
-    context_modifier: Optional[Callable] = None
-    mcp_meta: Optional[Dict[str, Any]] = None
+    new_messages: list | None = None   # 工具可以向对话中注入新消息
+    context_modifier: Callable | None = None
+    mcp_meta: dict[str, Any] | None = None
 
 # ============================================================================
 # 验证结果类型
@@ -83,8 +85,8 @@ class ValidationResult:
         ValidationResult(result=False, message="文件路径不能为空", error_code=400)
     """
     result: bool                      # True 表示验证通过
-    message: Optional[str] = None     # 失败时的错误消息
-    error_code: Optional[int] = None  # 失败时的错误代码
+    message: str | None = None     # 失败时的错误消息
+    error_code: int | None = None  # 失败时的错误代码
 
 # ============================================================================
 # 进度类型

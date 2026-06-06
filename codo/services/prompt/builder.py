@@ -8,11 +8,13 @@ Prompt 构建器
 保留：基础提示词构建、上下文注入、工具列表生成
 """
 
-from typing import List, Set, Optional, Dict, Any
-from codo.constants.prompts import get_system_prompt
-from codo.services.prompt.context import get_system_context, get_user_context
+from typing import Any
+
+from codo.constants import DEFAULT_MODEL, get_system_prompt
 from codo.services.memory.scan import load_memory_index
+from codo.services.prompt.context import get_system_context, get_user_context
 from codo.tools_registry import get_all_tools
+
 
 class PromptBuilder:
     """
@@ -25,7 +27,7 @@ class PromptBuilder:
     4. 组装系统提示词
     """
 
-    def __init__(self, cwd: str, model: str = "Opus 4.6"):
+    def __init__(self, cwd: str, model: str = DEFAULT_MODEL):
         """
         初始化 Prompt 构建器
 
@@ -36,7 +38,7 @@ class PromptBuilder:
         self.cwd = cwd
         self.model = model
 
-    def get_enabled_tools(self) -> Set[str]:
+    def get_enabled_tools(self) -> set[str]:
         """
         获取启用的工具名称集合
 
@@ -52,9 +54,9 @@ class PromptBuilder:
 
     def build_system_prompt(
         self,
-        language_preference: Optional[str] = None,
-        custom_system_prompt: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        language_preference: str | None = None,
+        custom_system_prompt: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         构建系统提示词
 
@@ -64,14 +66,14 @@ class PromptBuilder:
         3. 获取用户上下文
         4. 获取系统上下文
         5. 组装完整的系统提示词
-        6. 转换为 ?? API 格式
+        6. 转换为模型 API 格式
 
         Args:
             language_preference: 语言偏好
             custom_system_prompt: 自定义系统提示词（完全替换默认提示词）
 
         Returns:
-            系统提示词块列表（?? API 格式）
+            系统提示词块列表（模型 API 格式）
         """
         # 如果有自定义系统提示词，直接使用
         if custom_system_prompt:
@@ -86,7 +88,7 @@ class PromptBuilder:
         # 获取可用的工具集合名字  set集合
         enabled_tools = self.get_enabled_tools()
 
-        # 获取用户上下文和系统上下文（使用 memoize 缓存的函数） 包括记忆索引
+        # 获取用户上下文和系统上下文（使用 memoize 缓存的函数） 
         user_context_dict = get_user_context(self.cwd)
         system_context_dict = get_system_context(self.cwd)
 
@@ -123,7 +125,7 @@ class PromptBuilder:
         # 合并所有部分为单一文本
         full_text = "\n\n".join(sections)
 
-        # 转换为 ?? API 格式
+        # 转换为模型 API 格式
         return [
             {
                 "type": "text",
@@ -134,8 +136,8 @@ class PromptBuilder:
 
     def build_system_prompt_text(
         self,
-        language_preference: Optional[str] = None,
-        custom_system_prompt: Optional[str] = None,
+        language_preference: str | None = None,
+        custom_system_prompt: str | None = None,
     ) -> str:
         """
         构建系统提示词文本（用于调试）
@@ -156,10 +158,10 @@ class PromptBuilder:
 
 def build_system_prompt_for_cwd(
     cwd: str,
-    model: str = "Opus 4.6",
-    language_preference: Optional[str] = None,
-    custom_system_prompt: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    model: str = DEFAULT_MODEL,
+    language_preference: str | None = None,
+    custom_system_prompt: str | None = None,
+) -> list[dict[str, Any]]:
     """
     为指定工作目录构建系统提示词
 
@@ -174,7 +176,7 @@ def build_system_prompt_for_cwd(
         custom_system_prompt: 自定义系统提示词
 
     Returns:
-        系统提示词块列表（?? API 格式）
+        系统提示词块列表（模型 API 格式）
     """
     builder = PromptBuilder(cwd, model)
     return builder.build_system_prompt(language_preference, custom_system_prompt)

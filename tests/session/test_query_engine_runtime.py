@@ -1,12 +1,19 @@
 import asyncio
-from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from codo.cli.tui.interaction_types import InteractionOption, InteractionQuestion, InteractionRequest
 from codo.query import Terminal
 from codo.query_engine import QueryEngine
+from codo.types.runtime import InteractionOption, InteractionQuestion, InteractionRequest
+from tests.fake_anthropic_stream import (
+    FakeAnthropicStream,
+    FakeContentBlock,
+    FakeDelta,
+    FakeFinalMessage,
+    FakeStreamEvent,
+)
+
 
 class DummyClient:
     pass
@@ -107,18 +114,21 @@ async def test_query_engine_interrupt_cancels_active_runtime(monkeypatch):
 @pytest.mark.asyncio
 async def test_query_engine_emits_runtime_phase_events_for_real_query(monkeypatch):
     mock_client = AsyncMock()
-    mock_stream = AsyncMock()
-    mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
-    mock_stream.__aexit__ = AsyncMock(return_value=None)
-
-    async def mock_stream_events():
-        yield Mock(type="content_block_start", content_block=Mock(type="text", text=""))
-        yield Mock(type="content_block_delta", delta=Mock(type="text_delta", text="Hello"))
-        yield Mock(type="content_block_stop")
-
-    mock_stream.__aiter__ = mock_stream_events
-    mock_stream.get_final_message = AsyncMock(
-        return_value=Mock(content=[Mock(type="text", text="Hello")], stop_reason=None)
+    mock_stream = FakeAnthropicStream(
+        events=[
+            FakeStreamEvent(
+                type="content_block_start",
+                content_block=FakeContentBlock(type="text"),
+            ),
+            FakeStreamEvent(
+                type="content_block_delta",
+                delta=FakeDelta(type="text_delta", text="Hello"),
+            ),
+            FakeStreamEvent(type="content_block_stop"),
+        ],
+        final_message=FakeFinalMessage(
+            content=[FakeContentBlock(type="text", text="Hello")],
+        ),
     )
     mock_client.messages.stream = Mock(return_value=mock_stream)
 
@@ -302,18 +312,21 @@ async def test_query_engine_send_control_supports_sidebar_runtime_command_only(m
 @pytest.mark.asyncio
 async def test_query_engine_retry_checkpoint_restores_messages_from_archived_checkpoint(monkeypatch):
     mock_client = AsyncMock()
-    mock_stream = AsyncMock()
-    mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
-    mock_stream.__aexit__ = AsyncMock(return_value=None)
-
-    async def mock_stream_events():
-        yield Mock(type="content_block_start", content_block=Mock(type="text", text=""))
-        yield Mock(type="content_block_delta", delta=Mock(type="text_delta", text="Hello"))
-        yield Mock(type="content_block_stop")
-
-    mock_stream.__aiter__ = mock_stream_events
-    mock_stream.get_final_message = AsyncMock(
-        return_value=Mock(content=[Mock(type="text", text="Hello")], stop_reason=None)
+    mock_stream = FakeAnthropicStream(
+        events=[
+            FakeStreamEvent(
+                type="content_block_start",
+                content_block=FakeContentBlock(type="text"),
+            ),
+            FakeStreamEvent(
+                type="content_block_delta",
+                delta=FakeDelta(type="text_delta", text="Hello"),
+            ),
+            FakeStreamEvent(type="content_block_stop"),
+        ],
+        final_message=FakeFinalMessage(
+            content=[FakeContentBlock(type="text", text="Hello")],
+        ),
     )
     mock_client.messages.stream = Mock(return_value=mock_stream)
 
