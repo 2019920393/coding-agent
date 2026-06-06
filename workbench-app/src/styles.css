@@ -5302,3 +5302,1436 @@ body.is-resizing-chat::after {
     display: none;
   }
 }
+
+/* ==================================================
+   Diff Viewer Component
+   ================================================== */
+
+.codo-diff-viewer {
+  margin: 8px 0;
+  border: 1px solid var(--ai-line);
+  border-radius: 8px;
+  background: #171a1e;
+  overflow: hidden;
+}
+
+.codo-diff-viewer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ai-line);
+  background: linear-gradient(135deg, #1e2327 0%, #1a1e22 100%);
+}
+
+.codo-diff-viewer__info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.codo-diff-viewer__label {
+  color: #8f99a5;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.codo-diff-viewer__path,
+.codo-diff-viewer__change-id {
+  padding: 2px 6px;
+  border: 1px solid #303841;
+  border-radius: 4px;
+  color: #a8b5c2;
+  background: #20262c;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+}
+
+.codo-diff-viewer__change-id {
+  color: #d19a66;
+}
+
+.codo-diff-viewer__controls {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.codo-diff-viewer__btn {
+  padding: 4px 10px;
+  border: 1px solid #303841;
+  border-radius: 5px;
+  color: #aeb8c2;
+  background: #20262c;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.codo-diff-viewer__btn:hover {
+  border-color: #4a95bf;
+  color: #dff3ff;
+  background: #2a3540;
+}
+
+.codo-diff-viewer__btn--active {
+  border-color: #4a7a9a;
+  color: #dff3ff;
+  background: #2a3540;
+}
+
+.codo-diff-viewer__content {
+  max-height: 500px;
+  overflow: auto;
+}
+
+/* 统一视图 */
+.codo-diff-unified {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.codo-diff-line {
+  display: flex;
+  align-items: stretch;
+  min-height: 20px;
+}
+
+.codo-diff-line__number {
+  flex: 0 0 42px;
+  padding: 2px 8px;
+  color: #5c6370;
+  background: #1a1d21;
+  text-align: right;
+  user-select: none;
+  border-right: 1px solid #262c33;
+}
+
+.codo-diff-line__number--old {
+  border-right: none;
+}
+
+.codo-diff-line__number--new {
+  border-right: 1px solid #262c33;
+}
+
+.codo-diff-line__marker {
+  flex: 0 0 24px;
+  padding: 2px 0;
+  text-align: center;
+  font-weight: 700;
+  user-select: none;
+}
+
+.codo-diff-line__content {
+  flex: 1 1 auto;
+  padding: 2px 8px;
+  color: #d4dae0;
+  background: transparent;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* 上下文行 */
+.codo-diff-line--context {
+  background: transparent;
+}
+
+.codo-diff-line--context .codo-diff-line__marker {
+  color: #5c6370;
+}
+
+/* 添加行 */
+.codo-diff-line--add {
+  background: rgba(34, 134, 58, 0.15);
+}
+
+.codo-diff-line--add .codo-diff-line__marker {
+  color: #73c991;
+  background: rgba(34, 134, 58, 0.2);
+}
+
+.codo-diff-line--add .codo-diff-line__content {
+  color: #c5f5d6;
+}
+
+/* 删除行 */
+.codo-diff-line--remove {
+  background: rgba(244, 135, 113, 0.15);
+}
+
+.codo-diff-line--remove .codo-diff-line__marker {
+  color: #f48771;
+  background: rgba(244, 135, 113, 0.2);
+}
+
+.codo-diff-line--remove .codo-diff-line__content {
+  color: #ffd2ca;
+}
+
+/* 头部行 */
+.codo-diff-line--header {
+  background: #1e2327;
+}
+
+.codo-diff-line--header .codo-diff-line__content {
+  color: #61afef;
+  font-weight: 600;
+}
+
+/* 并排视图 */
+.codo-diff-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.codo-diff-split__pane {
+  overflow-x: auto;
+  border-right: 1px solid var(--ai-line);
+}
+
+.codo-diff-split__pane:last-child {
+  border-right: none;
+}
+
+.codo-diff-split__pane--old {
+  background: rgba(244, 135, 113, 0.05);
+}
+
+.codo-diff-split__pane--new {
+  background: rgba(34, 134, 58, 0.05);
+}
+
+.codo-diff-split__header {
+  position: sticky;
+  top: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ai-line);
+  color: var(--ai-fg-strong);
+  background: linear-gradient(135deg, #1e2327 0%, #1a1e22 100%);
+  font-size: 11px;
+  font-weight: 660;
+  text-align: center;
+  z-index: 1;
+}
+
+.codo-diff-split .codo-diff-line {
+  display: flex;
+  align-items: stretch;
+  min-height: 20px;
+}
+
+.codo-diff-split .codo-diff-line__number {
+  flex: 0 0 42px;
+  padding: 2px 8px;
+  color: #5c6370;
+  background: #1a1d21;
+  text-align: right;
+  user-select: none;
+  border-right: 1px solid #262c33;
+}
+
+.codo-diff-split .codo-diff-line__content {
+  flex: 1 1 auto;
+  padding: 2px 8px;
+  color: #d4dae0;
+  background: transparent;
+  white-space: pre;
+}
+
+/* 并排视图 - 空行 */
+.codo-diff-split .codo-diff-line--empty {
+  background: rgba(255, 255, 255, 0.02);
+  min-height: 20px;
+}
+
+.codo-diff-split .codo-diff-line--empty .codo-diff-line__content {
+  color: transparent;
+}
+
+/* 并排视图 - 上下文行 */
+.codo-diff-split .codo-diff-line--context {
+  background: transparent;
+}
+
+/* 并排视图 - 删除行 (左侧) */
+.codo-diff-split__pane--old .codo-diff-line--remove {
+  background: rgba(244, 135, 113, 0.2);
+}
+
+.codo-diff-split__pane--old .codo-diff-line--remove .codo-diff-line__content {
+  color: #ffd2ca;
+}
+
+/* 并排视图 - 添加行 (右侧) */
+.codo-diff-split__pane--new .codo-diff-line--add {
+  background: rgba(34, 134, 58, 0.2);
+}
+
+.codo-diff-split__pane--new .codo-diff-line--add .codo-diff-line__content {
+  color: #c5f5d6;
+}
+
+/* 并排视图 - 头部行 */
+.codo-diff-split .codo-diff-line--header {
+  background: #1e2327;
+}
+
+.codo-diff-split .codo-diff-line--header .codo-diff-line__content {
+  color: #61afef;
+  font-weight: 600;
+}
+
+/* 滚动条优化 */
+.codo-diff-viewer__content::-webkit-scrollbar,
+.codo-diff-split__pane::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.codo-diff-viewer__content::-webkit-scrollbar-track,
+.codo-diff-split__pane::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.codo-diff-viewer__content::-webkit-scrollbar-thumb,
+.codo-diff-split__pane::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #4a5561;
+  background-clip: content-box;
+}
+
+.codo-diff-viewer__content::-webkit-scrollbar-thumb:hover,
+.codo-diff-split__pane::-webkit-scrollbar-thumb:hover {
+  background: #5a6571;
+  background-clip: content-box;
+}
+
+
+/* ==================================================
+   Loading Indicators
+   ================================================== */
+
+/* 基础加载容器 */
+.codo-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.codo-loading--small {
+  font-size: 12px;
+}
+
+.codo-loading--medium {
+  font-size: 14px;
+}
+
+.codo-loading--large {
+  font-size: 16px;
+}
+
+.codo-loading__message {
+  color: var(--ai-fg-muted);
+  font-size: inherit;
+}
+
+/* 三点跳动动画 */
+.codo-loading-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.codo-loading-dots__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ai-accent);
+  animation: codo-bounce 1.4s infinite ease-in-out both;
+}
+
+.codo-loading-dots__dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.codo-loading-dots__dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes codo-bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* 旋转圆圈 */
+.codo-loading-spinner {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+}
+
+.codo-loading-spinner__svg {
+  width: 100%;
+  height: 100%;
+  animation: codo-rotate 2s linear infinite;
+}
+
+.codo-loading-spinner__circle {
+  stroke: var(--ai-accent);
+  stroke-linecap: round;
+  stroke-dasharray: 1, 150;
+  stroke-dashoffset: 0;
+  animation: codo-dash 1.5s ease-in-out infinite;
+}
+
+@keyframes codo-rotate {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes codo-dash {
+  0% {
+    stroke-dasharray: 1, 150;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -35;
+  }
+  100% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -124;
+  }
+}
+
+/* 脉动效果 */
+.codo-loading-pulse {
+  position: relative;
+  width: 24px;
+  height: 24px;
+}
+
+.codo-loading-pulse__ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: 2px solid var(--ai-accent);
+  border-radius: 50%;
+  opacity: 0;
+  animation: codo-pulse 1.5s cubic-bezier(0.215, 0.610, 0.355, 1.000) infinite;
+}
+
+.codo-loading-pulse__ring:nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+.codo-loading-pulse__ring:nth-child(3) {
+  animation-delay: 1s;
+}
+
+@keyframes codo-pulse {
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* 进度条 */
+.codo-loading-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 200px;
+}
+
+.codo-loading-progress__track {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.codo-loading-progress__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ai-accent) 0%, #61afef 100%);
+  border-radius: 2px;
+  transition: width 300ms ease;
+}
+
+.codo-loading-progress__label {
+  flex: 0 0 auto;
+  color: var(--ai-fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* Typing 指示器 */
+.codo-typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 12px;
+  border-radius: 18px;
+  background: rgba(74, 149, 191, 0.15);
+}
+
+.codo-typing-indicator__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ai-accent);
+  animation: codo-typing-bounce 1.2s infinite ease-in-out;
+}
+
+.codo-typing-indicator__dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.codo-typing-indicator__dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.codo-typing-indicator__dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes codo-typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+/* Thinking 指示器 */
+.codo-thinking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(97, 175, 239, 0.12) 0%, rgba(152, 195, 121, 0.08) 100%);
+  border: 1px solid rgba(97, 175, 239, 0.2);
+}
+
+.codo-thinking-indicator__brain {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  color: var(--ai-accent);
+  flex: 0 0 auto;
+}
+
+.codo-thinking-indicator__brain svg {
+  width: 100%;
+  height: 100%;
+  animation: codo-thinking-float 2s ease-in-out infinite;
+}
+
+.codo-thinking-indicator__waves {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%);
+}
+
+.codo-thinking-indicator__wave {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: 2px solid var(--ai-accent);
+  border-radius: 50%;
+  opacity: 0;
+  animation: codo-thinking-wave 2s ease-out infinite;
+}
+
+.codo-thinking-indicator__wave:nth-child(2) {
+  animation-delay: 0.6s;
+}
+
+.codo-thinking-indicator__wave:nth-child(3) {
+  animation-delay: 1.2s;
+}
+
+@keyframes codo-thinking-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes codo-thinking-wave {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.codo-thinking-indicator__message {
+  color: var(--ai-fg);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 骨架屏加载器 */
+.codo-skeleton-loader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.codo-skeleton-loader__line {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: codo-skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes codo-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+
+/* Typing Indicator Wrapper */
+.codo-typing-wrapper {
+  display: flex;
+  justify-content: flex-start;
+  padding: 8px 0;
+  margin-left: 48px;
+  animation: codo-fade-in 300ms ease;
+}
+
+
+/* ==================================================
+   Enhanced Interaction Card (Permission Dialog)
+   ================================================== */
+
+/* 重写交互卡片的基础样式，增加更现代的设计 */
+.codo-interaction-card {
+  position: relative;
+  border-radius: 10px !important;
+  border: 1px solid rgba(201, 157, 59, 0.3) !important;
+  background: linear-gradient(135deg, #2a2419 0%, #241f18 100%) !important;
+  box-shadow: 
+    inset 3px 0 0 var(--ai-amber),
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(201, 157, 59, 0.1) !important;
+  animation: codo-interaction-slide-in 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes codo-interaction-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 头部增强 */
+.codo-interaction-card__header {
+  align-items: center !important;
+}
+
+.codo-interaction-card__header > div {
+  gap: 4px !important;
+}
+
+.codo-interaction-card__header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #d9a957 !important;
+  background: rgba(201, 157, 59, 0.12);
+  font-size: 10px !important;
+  font-weight: 660;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.codo-interaction-card__header span::before {
+  content: "⚠";
+  font-size: 11px;
+}
+
+.codo-interaction-card__header h3 {
+  color: #f8e8c8 !important;
+  font-size: 14px !important;
+  font-weight: 660 !important;
+}
+
+.codo-interaction-card__header em {
+  padding: 4px 10px !important;
+  border-radius: 12px !important;
+  border-color: #8d733a !important;
+  color: #ffedb8 !important;
+  background: linear-gradient(135deg, #3d3019 0%, #302711 100%) !important;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 237, 184, 0.1);
+}
+
+/* 消息文本优化 */
+.codo-interaction-card > p {
+  padding: 8px 12px;
+  border-left: 3px solid rgba(201, 157, 59, 0.3);
+  border-radius: 4px;
+  color: #e5d4b5 !important;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+}
+
+/* 工具信息代码块增强 */
+.codo-interaction-card > code {
+  padding: 10px 12px !important;
+  border-radius: 6px !important;
+  border-color: #5a4a2f !important;
+  background: #1a1610 !important;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* 问题区域优化 */
+.codo-interaction-card__questions {
+  gap: 10px !important;
+}
+
+.codo-interaction-question {
+  padding: 12px;
+  border: 1px solid #5a4a2f !important;
+  border-radius: 8px !important;
+  background: rgba(0, 0, 0, 0.25) !important;
+}
+
+.codo-interaction-question legend {
+  padding: 0 8px;
+  color: #d9a957;
+  font-size: 11px;
+  font-weight: 660;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.codo-interaction-question__top {
+  margin-bottom: 12px;
+}
+
+.codo-interaction-question__top p {
+  color: #e5d4b5;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.codo-interaction-question__top span {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #a89470;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 10px;
+  font-weight: 660;
+}
+
+/* 选项按钮增强 */
+.codo-interaction-option {
+  padding: 12px 14px !important;
+  border: 2px solid #5a4a2f !important;
+  border-radius: 8px !important;
+  background: linear-gradient(135deg, #221d15 0%, #1a1610 100%) !important;
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.codo-interaction-option:hover {
+  border-color: #8d733a !important;
+  background: linear-gradient(135deg, #2a231a 0%, #221d15 100%) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.codo-interaction-option--active {
+  border-color: #c99d3b !important;
+  background: linear-gradient(135deg, #352d1d 0%, #2a231a 100%) !important;
+  box-shadow: 
+    0 0 0 1px rgba(201, 157, 59, 0.3),
+    0 4px 12px rgba(201, 157, 59, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.codo-interaction-option strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #f8e8c8;
+  font-size: 13px;
+  font-weight: 660;
+}
+
+.codo-interaction-option span {
+  display: block;
+  color: #b5a789;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* 进度条增强 */
+.codo-interaction-progress__step {
+  width: 28px !important;
+  height: 28px !important;
+  border-width: 2px !important;
+  border-color: #5f5239 !important;
+  background: #1a1610 !important;
+  font-weight: 660;
+  transition: all 200ms ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.codo-interaction-progress__step:hover:not(:disabled) {
+  border-color: #8d733a;
+  background: #221d15;
+  transform: scale(1.08);
+}
+
+.codo-interaction-progress__step--answered {
+  border-color: #c99d3b !important;
+  color: #ffedb8 !important;
+  background: linear-gradient(135deg, #3d3019 0%, #302711 100%) !important;
+  box-shadow: 
+    0 0 0 2px rgba(201, 157, 59, 0.2),
+    0 2px 6px rgba(201, 157, 59, 0.3);
+}
+
+.codo-interaction-progress__step--active {
+  border-color: #d9a957 !important;
+  color: #ffffff !important;
+  background: linear-gradient(135deg, #c99d3b 0%, #b08935 100%) !important;
+  box-shadow: 
+    0 0 0 3px rgba(201, 157, 59, 0.25),
+    0 4px 10px rgba(201, 157, 59, 0.4);
+  transform: scale(1.12);
+}
+
+/* 操作按钮增强 */
+.codo-interaction-card__actions {
+  gap: 8px !important;
+  padding-top: 4px;
+}
+
+.codo-interaction-card__actions button {
+  min-height: 32px !important;
+  padding: 0 16px !important;
+  border-width: 2px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.codo-interaction-card__actions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 
+    0 4px 10px rgba(201, 157, 59, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.codo-interaction-card__actions button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 
+    0 1px 3px rgba(0, 0, 0, 0.3),
+    inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* 主要操作按钮 (提交/继续) */
+.codo-interaction-card__actions button:last-child:not(:first-child) {
+  border-color: #c99d3b !important;
+  color: #ffffff !important;
+  background: linear-gradient(135deg, #c99d3b 0%, #b08935 100%) !important;
+  box-shadow: 
+    0 2px 6px rgba(201, 157, 59, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.codo-interaction-card__actions button:last-child:not(:first-child):hover:not(:disabled) {
+  border-color: #d9a957 !important;
+  background: linear-gradient(135deg, #d9a957 0%, #c99d3b 100%) !important;
+  box-shadow: 
+    0 4px 12px rgba(201, 157, 59, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* 禁用状态 */
+.codo-interaction-card__actions button:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+/* 答案摘要优化 */
+.codo-interaction-answer {
+  padding: 8px 10px !important;
+  border-radius: 6px !important;
+  border-color: #5a4a2f !important;
+  background: rgba(0, 0, 0, 0.25) !important;
+  transition: all 160ms ease;
+}
+
+.codo-interaction-answer:hover {
+  border-color: #6f5c38;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.codo-interaction-answer--active {
+  border-color: #8d733a !important;
+  background: rgba(201, 157, 59, 0.08) !important;
+  box-shadow: inset 0 0 0 1px rgba(201, 157, 59, 0.15);
+}
+
+
+/* ==================================================
+   Enhanced Todo Panel Visual Feedback
+   ================================================== */
+
+/* 增强 Todo 面板整体效果 */
+.codo-inline-todo {
+  position: relative;
+  overflow: hidden;
+}
+
+.codo-inline-todo::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(91, 179, 120, 0.3) 20%, 
+    rgba(91, 179, 120, 0.5) 50%, 
+    rgba(91, 179, 120, 0.3) 80%, 
+    transparent 100%);
+  opacity: 0.6;
+}
+
+/* 头部标题增强 */
+.codo-inline-todo__header h3 {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.codo-inline-todo__header h3::before {
+  content: "✓";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: #5bb378;
+  background: rgba(91, 179, 120, 0.15);
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(91, 179, 120, 0.3);
+}
+
+/* 计数徽章增强 */
+.codo-inline-todo__count {
+  position: relative;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3px;
+}
+
+.codo-inline-todo__count::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 0%, rgba(91, 179, 120, 0.15) 0%, transparent 70%);
+  z-index: -1;
+}
+
+/* 进度条增强 - 添加脉动效果 */
+.codo-inline-todo__progress span::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 40px;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 100%);
+  animation: codo-progress-sweep 2s ease-in-out infinite;
+}
+
+@keyframes codo-progress-sweep {
+  0% {
+    transform: translateX(-40px);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+}
+
+/* Todo 项增强 - 添加左侧进度指示 */
+.codo-inline-todo-item {
+  position: relative;
+}
+
+.codo-inline-todo-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 7px 0 0 7px;
+  background: transparent;
+  transition: all 200ms ease;
+}
+
+.codo-inline-todo-item--in_progress::before {
+  background: linear-gradient(180deg, #5a95bb 0%, #497a9a 100%);
+  box-shadow: 0 0 8px rgba(90, 149, 187, 0.5);
+  animation: codo-progress-indicator-pulse 1.5s ease-in-out infinite;
+}
+
+.codo-inline-todo-item--completed::before {
+  background: linear-gradient(180deg, #5bb378 0%, #4d8f63 100%);
+  box-shadow: 0 0 6px rgba(91, 179, 120, 0.4);
+}
+
+@keyframes codo-progress-indicator-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    box-shadow: 0 0 8px rgba(90, 149, 187, 0.3);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 12px rgba(90, 149, 187, 0.6);
+  }
+}
+
+/* 状态标记增强 - 添加更明显的视觉层次 */
+.codo-inline-todo-item--pending .codo-inline-todo-item__mark {
+  position: relative;
+}
+
+.codo-inline-todo-item--pending .codo-inline-todo-item__mark::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid rgba(107, 91, 50, 0.2);
+  opacity: 0;
+  animation: codo-pending-ring 2s ease-in-out infinite;
+}
+
+@keyframes codo-pending-ring {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.4;
+  }
+}
+
+/* 进行中项的旋转效果增强 */
+.codo-inline-todo-item--in_progress .codo-inline-todo-item__mark::after {
+  animation: codo-running-dot-rotate 1.2s linear infinite;
+}
+
+@keyframes codo-running-dot-rotate {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.1);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+/* 完成项的勾选动画增强 */
+.codo-inline-todo-item--completed .codo-inline-todo-item__mark::after {
+  animation: codo-checkmark-draw 300ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes codo-checkmark-draw {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+  }
+  50% {
+    width: 9px;
+    height: 2px;
+    opacity: 0.7;
+  }
+  100% {
+    width: 9px;
+    height: 4px;
+    opacity: 1;
+  }
+}
+
+/* 完成项的文本划线效果 */
+.codo-inline-todo-item--completed strong {
+  position: relative;
+}
+
+.codo-inline-todo-item--completed strong::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, #67ab7d 20%, #67ab7d 80%, transparent 100%);
+  transform: translateY(-50%) scaleX(0);
+  transform-origin: left;
+  animation: codo-strikethrough 400ms cubic-bezier(0.4, 0, 0.2, 1) 100ms both;
+}
+
+@keyframes codo-strikethrough {
+  to {
+    transform: translateY(-50%) scaleX(1);
+  }
+}
+
+/* 状态徽章优化 */
+.codo-inline-todo-item em {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 660;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  transition: all 180ms ease;
+}
+
+.codo-inline-todo-item--pending em {
+  border: 1px solid rgba(107, 91, 50, 0.4);
+  color: #d4ba7c;
+  background: rgba(107, 91, 50, 0.12);
+}
+
+.codo-inline-todo-item--in_progress em {
+  border: 1px solid rgba(90, 149, 187, 0.4);
+  color: #8dbddf;
+  background: rgba(90, 149, 187, 0.15);
+  box-shadow: 0 0 8px rgba(90, 149, 187, 0.2);
+  animation: codo-status-glow 1.5s ease-in-out infinite;
+}
+
+.codo-inline-todo-item--completed em {
+  border: 1px solid rgba(103, 171, 125, 0.4);
+  color: #9fd4b3;
+  background: rgba(103, 171, 125, 0.15);
+}
+
+@keyframes codo-status-glow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(90, 149, 187, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(90, 149, 187, 0.4);
+  }
+}
+
+/* 列表滚动渐变遮罩 */
+.codo-inline-todo__list {
+  position: relative;
+}
+
+.codo-inline-todo__list::after {
+  content: "";
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: linear-gradient(to top, #202720 0%, transparent 100%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.codo-inline-todo__list:hover::after {
+  opacity: 1;
+}
+
+/* 空状态提示 */
+.codo-inline-todo--empty {
+  padding: 20px;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.codo-inline-todo--empty::before {
+  content: "✓";
+  display: block;
+  margin: 0 auto 8px;
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  border-radius: 50%;
+  color: #5bb378;
+  background: rgba(91, 179, 120, 0.15);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+
+/* ==================================================
+   Tooltip Component
+   ================================================== */
+
+.codo-tooltip {
+  position: fixed;
+  padding: 0;
+  border-radius: 6px;
+  background: rgba(28, 32, 36, 0.98);
+  border: 1px solid rgba(74, 149, 191, 0.3);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 20px rgba(74, 149, 191, 0.15);
+  backdrop-filter: blur(8px);
+  animation: codo-tooltip-fade-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  user-select: none;
+  z-index: 10000;
+}
+
+@keyframes codo-tooltip-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.codo-tooltip__content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  color: #e0e6ed;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.codo-tooltip__shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border: 1px solid rgba(74, 149, 191, 0.3);
+  border-radius: 4px;
+  color: #9ec5e8;
+  background: linear-gradient(135deg, rgba(49, 94, 121, 0.25) 0%, rgba(34, 68, 87, 0.2) 100%);
+  font-family: "SF Pro Text", -apple-system, system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: 0.3px;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* 不同位置的箭头 */
+.codo-tooltip--top::after,
+.codo-tooltip--bottom::after,
+.codo-tooltip--left::after,
+.codo-tooltip--right::after {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+}
+
+.codo-tooltip--top::after {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-top-color: rgba(28, 32, 36, 0.98);
+  border-bottom-width: 0;
+}
+
+.codo-tooltip--bottom::after {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-bottom-color: rgba(28, 32, 36, 0.98);
+  border-top-width: 0;
+}
+
+.codo-tooltip--left::after {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left-color: rgba(28, 32, 36, 0.98);
+  border-right-width: 0;
+}
+
+.codo-tooltip--right::after {
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-right-color: rgba(28, 32, 36, 0.98);
+  border-left-width: 0;
+}
+
+/* 高级变体 - 成功提示 */
+.codo-tooltip--success {
+  border-color: rgba(91, 179, 120, 0.4);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(91, 179, 120, 0.2);
+}
+
+.codo-tooltip--success .codo-tooltip__content::before {
+  content: "✓";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: #5bb378;
+  background: rgba(91, 179, 120, 0.15);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* 高级变体 - 警告提示 */
+.codo-tooltip--warning {
+  border-color: rgba(201, 157, 59, 0.4);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(201, 157, 59, 0.2);
+}
+
+.codo-tooltip--warning .codo-tooltip__content::before {
+  content: "⚠";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: #d9a957;
+  background: rgba(201, 157, 59, 0.15);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* 高级变体 - 错误提示 */
+.codo-tooltip--error {
+  border-color: rgba(244, 135, 113, 0.4);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(244, 135, 113, 0.2);
+}
+
+.codo-tooltip--error .codo-tooltip__content::before {
+  content: "✕";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: #f48771;
+  background: rgba(244, 135, 113, 0.15);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* 响应式 - 小屏幕优化 */
+@media (max-width: 768px) {
+  .codo-tooltip {
+    max-width: 80vw;
+  }
+  
+  .codo-tooltip__content {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+}
+

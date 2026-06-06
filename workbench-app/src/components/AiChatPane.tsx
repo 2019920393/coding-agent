@@ -18,6 +18,10 @@ import type {
   AiPanelState,
   AiTodoGroup
 } from "../state/aiState";
+import { MarkdownRenderer } from "./MarkdownRenderer";
+import { DiffViewer } from "./DiffViewer";
+import { TypingIndicator, ThinkingIndicator } from "./LoadingIndicator";
+import { Tooltip } from "./Tooltip";
 
 interface AiChatPaneProps {
   state: AiPanelState;
@@ -122,14 +126,16 @@ export function AiChatPane({
           </div>
         </div>
         <div className="codo-assistant-header__actions">
-          <button
-            className="codo-header-action"
-            type="button"
-            disabled={state.workspacePath === null || state.activeTurnId !== null}
-            onClick={onStartNewSession}
-          >
-            新会话
-          </button>
+          <Tooltip content="开始新的对话会话" shortcut="Ctrl+N" placement="bottom">
+            <button
+              className="codo-header-action"
+              type="button"
+              disabled={state.workspacePath === null || state.activeTurnId !== null}
+              onClick={onStartNewSession}
+            >
+              新会话
+            </button>
+          </Tooltip>
           <SessionHistoryMenu
             sessions={state.sessions}
             selectedSessionId={state.selectedSessionId}
@@ -157,6 +163,11 @@ export function AiChatPane({
               ) : (
                 <ActivityCard key={feedItem.item.id} card={feedItem.item} />
               )
+            )}
+            {state.activeTurnId !== null && feedItems.length > 0 && (
+              <div className="codo-typing-wrapper">
+                <TypingIndicator />
+              </div>
             )}
             <InlineTodoBlock groups={state.todoGroups} />
             <InlineAgentTeam
@@ -197,16 +208,21 @@ export function AiChatPane({
             <span>{formatComposerHint(state, canCancel)}</span>
           </div>
         </div>
-        <button
-          className={
-            canCancel ? "ai-chat-pane__send ai-chat-pane__send--stop" : "ai-chat-pane__send"
-          }
-          type="submit"
-          disabled={!canSend && !canCancel}
-          title={canCancel ? "中断当前 AI 回复" : "发送消息"}
+        <Tooltip
+          content={canCancel ? "中断当前 AI 回复" : "发送消息"}
+          shortcut={canCancel ? "Esc" : "Enter"}
+          placement="left"
         >
-          {canCancel ? "停止" : "发送"}
-        </button>
+          <button
+            className={
+              canCancel ? "ai-chat-pane__send ai-chat-pane__send--stop" : "ai-chat-pane__send"
+            }
+            type="submit"
+            disabled={!canSend && !canCancel}
+          >
+            {canCancel ? "停止" : "发送"}
+          </button>
+        </Tooltip>
       </form>
     </aside>
   );
@@ -827,6 +843,9 @@ interface AiMessageBubbleProps {
 }
 
 function AiMessageBubble({ message }: AiMessageBubbleProps) {
+  const content = message.content || placeholderForMessage(message);
+  const shouldRenderMarkdown = message.role === "assistant" && message.content.trim().length > 0;
+
   return (
     <article
       className={`ai-message ai-message--${message.role} ai-message--${message.status}`}
@@ -836,7 +855,11 @@ function AiMessageBubble({ message }: AiMessageBubbleProps) {
         <time>{message.createdAt}</time>
       </div>
       <div className="ai-message__bubble">
-        {message.content || placeholderForMessage(message)}
+        {shouldRenderMarkdown ? (
+          <MarkdownRenderer content={content} />
+        ) : (
+          content
+        )}
       </div>
     </article>
   );
@@ -889,7 +912,17 @@ function ActivityCard({ card }: ActivityCardProps) {
           <details className="codo-activity-card__details">
             <summary>{formatActivityDetailsLabel(card)}</summary>
             {card.detail.trim().length > 0 ? <pre>{card.detail}</pre> : null}
-            {card.receipt !== null ? <pre>{formatReceiptText(card.receipt)}</pre> : null}
+            {card.receipt !== null ? (
+              card.receipt.kind === "diff" ? (
+                <DiffViewer
+                  diffText={card.receipt.diffText}
+                  filePath={card.receipt.path}
+                  changeId={card.receipt.changeId}
+                />
+              ) : (
+                <pre>{formatReceiptText(card.receipt)}</pre>
+              )
+            ) : null}
           </details>
         ) : null}
       </div>
