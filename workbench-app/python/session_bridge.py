@@ -5,6 +5,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Sequence
+from urllib.parse import unquote
 
 SCRIPT_PATH = Path(__file__).resolve()
 WORKBENCH_ROOT = SCRIPT_PATH.parent.parent
@@ -77,8 +78,11 @@ class SessionBridgeApp:
             return 0
 
         if len(argv) == 4 and argv[1] == "load-session-messages":
+            # 添加调试信息输出到 stderr
+            self.write_error(f"[DEBUG] 接收到的原始参数: argv[3]={repr(argv[3])}")
             workspace_path = self.resolve_workspace_path(argv[2])
             session_id = self.resolve_session_id(argv[3])
+            self.write_error(f"[DEBUG] 解析后的 session_id: {repr(session_id)}")
             messages = self.load_session_messages(workspace_path, session_id)
             self.write_json({"messages": [message.to_dict() for message in messages]})
             return 0
@@ -105,14 +109,36 @@ class SessionBridgeApp:
         1. sessionId 来自前端历史列表，但仍然在 helper 边界校验。
         2. 只允许文件名安全字符，避免拼出路径分隔符。
         3. 真实文件位置仍由 SessionStorage/get_sessions_dir 决定。
+        4. 尝试 URL 解码，以防前端进行了编码。
+        5. 清理不可见字符（控制字符、零宽空格等）。
         """
-        session_id = raw_session_id.strip()
+        # 尝试 URL 解码
+        try:
+            decoded_session_id = unquote(raw_session_id)
+        except Exception:
+            decoded_session_id = raw_session_id
+
+        # 清理不可见字符和控制字符
+        # 只保留可打印字符和标准空白字符
+        cleaned_session_id = "".join(
+            char for char in decoded_session_id
+            if char.isprintable() or char in (" ", "\t")
+        )
+
+        session_id = cleaned_session_id.strip()
         if session_id == "":
             raise ValueError("session_id 不能为空。")
 
         allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
         if any(char not in allowed for char in session_id):
-            raise ValueError("session_id 包含非法字符。")
+            # 增强错误消息，显示实际的非法字符和完整的 session_id
+            illegal_chars = [char for char in session_id if char not in allowed]
+            illegal_chars_repr = ", ".join([repr(char) for char in illegal_chars])
+            raise ValueError(
+                f"session_id 包含非法字符：{illegal_chars_repr}。"
+                f"完整 session_id：{repr(session_id)}。"
+                f"原始输入：{repr(raw_session_id)}"
+            )
 
         return session_id
 
