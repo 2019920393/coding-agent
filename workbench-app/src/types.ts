@@ -144,6 +144,7 @@ export interface ExplorerNodeBase {
 export interface ExplorerFolderNode extends ExplorerNodeBase {
   kind: "folder";
   expanded: boolean;
+  loading: boolean;
 }
 
 /**

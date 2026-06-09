@@ -45,7 +45,8 @@ DEFAULT_EVENT_TIMEOUT_SECONDS = 90.0
 DEFAULT_MANUAL_INTERACTION_ENABLED = False
 DEFAULT_TITLE_GENERATION_TIMEOUT_SECONDS = 12.0
 CONTROL_HOST = "127.0.0.1"
-MAX_CONTROL_COMMAND_BYTES = 1024 * 1024
+BYTES_PER_MEBIBYTE = 1024 * 1024
+MAX_CONTROL_COMMAND_BYTES = 80 * BYTES_PER_MEBIBYTE
 
 
 @dataclass
@@ -135,6 +136,7 @@ class WorkbenchAiBridgeApp:
             self.handle_control_connection,
             host=CONTROL_HOST,
             port=0,
+            limit=MAX_CONTROL_COMMAND_BYTES + 1,
         )
         self.control_port = get_control_server_port(self.control_server)
         self.emit_bridge_ready(workspace_path=None, session_id=None)
@@ -161,7 +163,14 @@ class WorkbenchAiBridgeApp:
         """
         try:
             while True:
-                line = await reader.readline()
+                try:
+                    line = await reader.readline()
+                except ValueError:
+                    self.emit_bridge_error(
+                        "AI 控制命令过大，已拒绝。请压缩图片或减少一次发送的图片数量。"
+                    )
+                    return
+
                 if line == b"":
                     return
 
@@ -426,6 +435,7 @@ class WorkbenchAiBridgeApp:
             workspace_path = str(request.get("workspacePath", "") or "").strip()
             workspace_name = str(request.get("workspaceName", "") or "").strip()
             prompt = str(request.get("prompt", "") or "").strip()
+            images = request.get("images") or []
             session_id = normalize_session_id(request.get("sessionId"))
             manual_interaction_enabled = parse_permission_mode(
                 request.get("permissionMode"),
@@ -488,6 +498,7 @@ class WorkbenchAiBridgeApp:
                 workspace_name,
                 workspace_path,
                 prompt,
+                images,
             )
 
             self.emit_runtime_status(
@@ -539,7 +550,7 @@ class WorkbenchAiBridgeApp:
         self,
         turn_id: str,
         engine: QueryEngine,
-        context_prompt: str,
+        context_prompt: str | list[dict[str, Any]],
     ):
         """
         带超时保护地消费 QueryEngine 事件流。
@@ -728,7 +739,8 @@ class WorkbenchAiBridgeApp:
         workspace_name: str,
         workspace_path: str,
         prompt: str,
-    ) -> str:
+        images: list[dict[str, Any]],
+    ) -> str | list[dict[str, Any]]:
         """
         把工作台上下文合并进用户 prompt。
 
@@ -736,13 +748,14 @@ class WorkbenchAiBridgeApp:
         1. 只拼接必要上下文，不把整个文件树塞进 prompt。
         2. 让模型知道当前 workspace、打开的文件和选中的文件。
         3. 保持 prompt 简洁，避免无意义的上下文噪音。
+        4. 支持图片附件，返回多模态内容数组。
         """
         active_file_path = request.get("activeFilePath")
         selected_path = request.get("selectedPath")
         open_file_paths = request.get("openFilePaths") or []
         open_file_lines = "\n".join(f"- {item}" for item in open_file_paths if isinstance(item, str))
 
-        return (
+        text_content = (
             "【工作台上下文】\n"
             f"工作区名称：{workspace_name}\n"
             f"工作区路径：{workspace_path}\n"
@@ -752,6 +765,26 @@ class WorkbenchAiBridgeApp:
             "【用户请求】\n"
             f"{prompt}"
         )
+
+        # 如果没有图片，返回纯文本
+        if not images:
+            return text_content
+
+        # 有图片时，返回多模态内容数组
+        content_parts: list[dict[str, Any]] = [{"type": "text", "text": text_content}]
+
+        for image in images:
+            if isinstance(image, dict) and "base64" in image and "mimeType" in image:
+                content_parts.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image["mimeType"],
+                        "data": image["base64"],
+                    },
+                })
+
+        return content_parts
 
     def forward_query_event(self, turn_id: str, event: Any) -> None:
         """

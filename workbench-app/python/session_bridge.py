@@ -47,6 +47,7 @@ class WorkbenchSessionMessage:
     message_id: str
     role: Literal["user", "assistant"]
     content: str
+    images: list["WorkbenchSessionImage"]
     created_at: str | None
 
     def to_dict(self) -> dict[str, Any]:
@@ -55,8 +56,32 @@ class WorkbenchSessionMessage:
             "id": self.message_id,
             "role": self.role,
             "content": self.content,
+            "images": [image.to_dict() for image in self.images],
             "createdAt": self.created_at,
         }
+
+
+@dataclass(frozen=True)
+class WorkbenchSessionImage:
+    """历史用户消息里的图片附件。"""
+
+    base64: str
+    mime_type: str
+
+    def to_dict(self) -> dict[str, str]:
+        """转成前端协议使用的 camelCase 字段。"""
+        return {
+            "base64": self.base64,
+            "mimeType": self.mime_type,
+        }
+
+
+@dataclass(frozen=True)
+class WorkbenchMessageDisplayContent:
+    """历史消息恢复后的文本和图片。"""
+
+    content: str
+    images: list[WorkbenchSessionImage]
 
 
 class SessionBridgeApp:
@@ -225,36 +250,44 @@ class SessionBridgeApp:
         if role not in {"user", "assistant"}:
             return None
 
-        content = self.extract_message_content(role, value.get("content"))
-        if content is None:
+        display_content = self.extract_message_display_content(role, value.get("content"))
+        if display_content is None:
             return None
 
         message_id = str(value.get("uuid") or f"history-{index}")
         return WorkbenchSessionMessage(
             message_id=f"history-{message_id}",
             role="user" if role == "user" else "assistant",
-            content=content,
+            content=display_content.content,
+            images=display_content.images,
             created_at=to_nullable_string(value.get("timestamp")),
         )
 
-    def extract_message_content(self, role: str, value: Any) -> str | None:
+    def extract_message_display_content(
+        self,
+        role: str,
+        value: Any,
+    ) -> "WorkbenchMessageDisplayContent | None":
         """
-        提取历史消息文本。
+        提取历史消息的可展示内容。
 
         工作流：
         1. user 字符串消息去掉 Workbench 上下文包装。
-        2. user 工具结果消息是 list，不当作用户发言展示。
-        3. assistant list 只拼接 text block，避免把 tool_use JSON 展示成回复。
+        2. user 多模态消息提取 text 和 image block。
+        3. user 工具结果消息不当作用户发言展示。
+        4. assistant list 只拼接 text block，避免把 tool_use JSON 展示成回复。
         """
         if isinstance(value, str):
             text = normalize_prompt_title(value) if role == "user" else value.strip()
-            return text if text is not None and text.strip() else None
+            if text is None or not text.strip():
+                return None
+            return WorkbenchMessageDisplayContent(content=text, images=[])
 
         if not isinstance(value, list):
             return None
 
         if role == "user":
-            return None
+            return self.extract_user_multimodal_content(value)
 
         text_parts: list[str] = []
         for block in value:
@@ -267,7 +300,49 @@ class SessionBridgeApp:
                 text_parts.append(text)
 
         content = "\n\n".join(text_parts).strip()
-        return content if content else None
+        if not content:
+            return None
+        return WorkbenchMessageDisplayContent(content=content, images=[])
+
+    def extract_user_multimodal_content(
+        self,
+        value: list[Any],
+    ) -> "WorkbenchMessageDisplayContent | None":
+        """
+        从历史 user content block 中恢复文本和图片。
+
+        工作流：
+        1. 如果包含 tool_result，说明这是工具结果回填消息，不展示为用户发言。
+        2. text block 用现有 prompt 摘要规则，保持历史列表展示口径不变。
+        3. image block 只接受 base64 source，恢复给前端直接渲染。
+        """
+        if any(is_tool_result_block(block) for block in value):
+            return None
+
+        text_parts: list[str] = []
+        images: list[WorkbenchSessionImage] = []
+
+        for block in value:
+            if not isinstance(block, dict):
+                continue
+
+            block_type = str(block.get("type", "") or "")
+            if block_type == "text":
+                text = normalize_prompt_title(block.get("text"))
+                if text is not None:
+                    text_parts.append(text)
+                continue
+
+            if block_type == "image":
+                image = normalize_image_block(block)
+                if image is not None:
+                    images.append(image)
+
+        content = "\n\n".join(text_parts).strip()
+        if not content and not images:
+            return None
+
+        return WorkbenchMessageDisplayContent(content=content, images=images)
 
     def normalize_session_info(
         self,
@@ -371,6 +446,36 @@ def build_session_title(
         return f"会话 {session_id[:8]}"
 
     return "未命名会话"
+
+
+def is_tool_result_block(value: Any) -> bool:
+    """判断 user content block 是否是工具结果回填。"""
+    return isinstance(value, dict) and value.get("type") == "tool_result"
+
+
+def normalize_image_block(value: dict[str, Any]) -> WorkbenchSessionImage | None:
+    """
+    从 Anthropic image block 中恢复前端图片附件。
+
+    工作流：
+    1. 只接受 base64 source，外部 URL 或文件路径不在历史 UI 里直接渲染。
+    2. media_type/data 必须同时存在，否则跳过这个损坏图片块。
+    3. 返回 Workbench 协议需要的 base64/mimeType 数据。
+    """
+    source = value.get("source")
+    if not isinstance(source, dict):
+        return None
+
+    source_type = str(source.get("type", "") or "")
+    if source_type != "base64":
+        return None
+
+    mime_type = to_nullable_string(source.get("media_type", source.get("mediaType")))
+    data = to_nullable_string(source.get("data"))
+    if mime_type is None or data is None:
+        return None
+
+    return WorkbenchSessionImage(base64=data, mime_type=mime_type)
 
 
 def normalize_prompt_title(value: Any) -> str | None:

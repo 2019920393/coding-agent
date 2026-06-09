@@ -10,6 +10,7 @@ import type {
   AiLoadSessionMessagesRequest,
   AiListSessionsRequest,
   AiDeleteSessionRequest,
+  AiImageAttachment,
   AiInteractionOption,
   AiInteractionQuestion,
   AiInteractionResponseValue,
@@ -32,7 +33,7 @@ import type {
 
 const DEFAULT_PYTHON_EXECUTABLE = process.env.CODO_PYTHON || process.env.PYTHON || "python";
 const BRIDGE_READY_TIMEOUT_MS = 10000;
-const SESSION_HELPER_TIMEOUT_MS = 5000;
+const SESSION_HELPER_TIMEOUT_MS = 30000;
 const BRIDGE_CONTROL_HOST = "127.0.0.1";
 const DEFAULT_MANUAL_INTERACTION_ENABLED =
   process.env.CODO_WORKBENCH_MANUAL_INTERACTION_ENABLED ?? "false";
@@ -420,7 +421,8 @@ export class WorkbenchAiBridge {
       activeFilePath: value.activeFilePath === null ? null : expectNullableString(value.activeFilePath, "activeFilePath"),
       selectedPath: value.selectedPath === null ? null : expectNullableString(value.selectedPath, "selectedPath"),
       openFilePaths: expectStringArray(value.openFilePaths, "openFilePaths"),
-      permissionMode: normalizePermissionMode(value.permissionMode)
+      permissionMode: normalizePermissionMode(value.permissionMode),
+      images: normalizeImageAttachments(value.images)
     };
   }
 
@@ -791,7 +793,31 @@ function normalizeSessionMessage(value: unknown, index: number): AiSessionMessag
     id: expectString(value.id, "id"),
     role: normalizeSessionMessageRole(value.role),
     content: expectString(value.content, "content"),
+    images: normalizeSessionMessageImages(value.images),
     createdAt: expectNullableString(value.createdAt, "createdAt")
+  };
+}
+
+function normalizeSessionMessageImages(value: unknown): AiImageAttachment[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error("历史会话消息 images 必须是数组。");
+  }
+
+  return value.map((item, index) => normalizeSessionMessageImage(item, index));
+}
+
+function normalizeSessionMessageImage(value: unknown, index: number): AiImageAttachment {
+  if (!isRecord(value)) {
+    throw new Error(`历史会话图片 ${index + 1} 必须是对象。`);
+  }
+
+  return {
+    base64: expectString(value.base64, "base64"),
+    mimeType: expectString(value.mimeType, "mimeType")
   };
 }
 
@@ -828,6 +854,58 @@ function expectInteractionResponseValue(
   }
 
   return result;
+}
+
+/**
+ * 校验并保留 renderer 传来的图片附件。
+ *
+ * 工作流：
+ * 1. 未传 images 时保持 undefined，避免给纯文本请求增加无意义字段。
+ * 2. 传入 images 时逐项校验 base64 和 mimeType。
+ * 3. 返回干净的数组，让 Python bridge 能构造 Anthropic 多模态 content block。
+ */
+function normalizeImageAttachments(value: unknown): AiImageAttachment[] | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error("images 必须是图片数组。");
+  }
+
+  return value.map((item, index) => {
+    if (!isRecord(item)) {
+      throw new Error(`images[${index}] 必须是对象。`);
+    }
+
+    const base64 = expectString(item.base64, `images[${index}].base64`).trim();
+    const mimeType = expectString(item.mimeType, `images[${index}].mimeType`).trim();
+
+    if (base64.length === 0) {
+      throw new Error(`images[${index}].base64 不能为空。`);
+    }
+
+    if (!isSupportedImageMimeType(mimeType)) {
+      throw new Error(`images[${index}].mimeType 不支持：${mimeType}`);
+    }
+
+    return {
+      base64,
+      mimeType
+    };
+  });
+}
+
+/**
+ * 只允许当前前端附件组件和 Anthropic 视觉输入共同支持的图片类型。
+ */
+function isSupportedImageMimeType(value: string): boolean {
+  return (
+    value === "image/png" ||
+    value === "image/jpeg" ||
+    value === "image/gif" ||
+    value === "image/webp"
+  );
 }
 
 function normalizeToolSummary(value: unknown): AiToolSummary {

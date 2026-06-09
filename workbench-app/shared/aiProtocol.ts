@@ -33,11 +33,17 @@ export interface AiWorkspaceContext {
   openFilePaths: string[];
 }
 
+export interface AiImageAttachment {
+  base64: string;
+  mimeType: string;
+}
+
 export interface AiSubmitMessageRequest extends AiWorkspaceContext {
   turnId: string;
   prompt: string;
   sessionId: string | null;
   permissionMode: AiPermissionMode;
+  images?: AiImageAttachment[];
 }
 
 export interface AiSessionInfo {
@@ -69,6 +75,7 @@ export interface AiSessionMessage {
   id: string;
   role: AiSessionMessageRole;
   content: string;
+  images: AiImageAttachment[];
   createdAt: string | null;
 }
 

@@ -1,6 +1,7 @@
 import type {
   AiAgentSummary,
   AiBridgeEvent,
+  AiImageAttachment,
   AiPermissionMode,
   AiPendingInteraction,
   AiRuntimeMetadata,
@@ -53,6 +54,7 @@ export interface AiConversationMessage {
   id: string;
   role: AiMessageRole;
   content: string;
+  images: AiImageAttachment[];
   createdAt: string;
   status: AiMessageStatus;
 }
@@ -148,7 +150,13 @@ export type AiPanelAction =
   | { type: "session/selected"; sessionId: string; createdAt: string }
   | { type: "session/new-started"; createdAt: string }
   | { type: "permission-mode/changed"; mode: AiPermissionMode; createdAt: string }
-  | { type: "turn/submitted"; turnId: string; prompt: string; createdAt: string }
+  | {
+      type: "turn/submitted";
+      turnId: string;
+      prompt: string;
+      images: AiImageAttachment[];
+      createdAt: string;
+    }
   | { type: "turn/cancel-started"; createdAt: string }
   | { type: "turn/event-received"; event: AiBridgeEvent; createdAt: string }
   | { type: "turn/local-error"; message: string; createdAt: string };
@@ -354,7 +362,12 @@ export function aiPanelReducer(
         agents: [],
         messages: trimMessages([
           ...state.messages,
-          createUserMessage(`user-${action.turnId}`, action.prompt, action.createdAt),
+          createUserMessage(
+            `user-${action.turnId}`,
+            action.prompt,
+            action.createdAt,
+            action.images
+          ),
           createAssistantMessage(`assistant-${action.turnId}-1`, "", "streaming", action.createdAt)
         ])
       };
@@ -1230,12 +1243,14 @@ function applyAgentError(
 function createUserMessage(
   id: string,
   content: string,
-  createdAt: string
+  createdAt: string,
+  images: AiImageAttachment[] = []
 ): AiConversationMessage {
   return {
     id,
     role: "user",
     content,
+    images,
     createdAt,
     status: "complete"
   };
@@ -1251,6 +1266,7 @@ function createAssistantMessage(
     id,
     role: "assistant",
     content,
+    images: [],
     createdAt,
     status
   };
@@ -1266,6 +1282,7 @@ function createSystemMessage(
     id,
     role: "system",
     content,
+    images: [],
     createdAt,
     status
   };
@@ -1297,6 +1314,7 @@ function buildHistoryMessages(
       id: message.id,
       role: message.role,
       content: message.content,
+      images: message.images,
       createdAt: formatHistoryMessageTime(message.createdAt, fallbackCreatedAt),
       status: "complete"
     }))

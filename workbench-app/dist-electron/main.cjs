@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -35,7 +36,7 @@ var import_node_path = __toESM(require("path"), 1);
 var import_node_readline = __toESM(require("readline"), 1);
 var DEFAULT_PYTHON_EXECUTABLE = process.env.CODO_PYTHON || process.env.PYTHON || "python";
 var BRIDGE_READY_TIMEOUT_MS = 1e4;
-var SESSION_HELPER_TIMEOUT_MS = 5e3;
+var SESSION_HELPER_TIMEOUT_MS = 3e4;
 var BRIDGE_CONTROL_HOST = "127.0.0.1";
 var DEFAULT_MANUAL_INTERACTION_ENABLED = process.env.CODO_WORKBENCH_MANUAL_INTERACTION_ENABLED ?? "false";
 var WorkbenchAiBridge = class {
@@ -364,7 +365,8 @@ var WorkbenchAiBridge = class {
       activeFilePath: value.activeFilePath === null ? null : expectNullableString(value.activeFilePath, "activeFilePath"),
       selectedPath: value.selectedPath === null ? null : expectNullableString(value.selectedPath, "selectedPath"),
       openFilePaths: expectStringArray(value.openFilePaths, "openFilePaths"),
-      permissionMode: normalizePermissionMode(value.permissionMode)
+      permissionMode: normalizePermissionMode(value.permissionMode),
+      images: normalizeImageAttachments(value.images)
     };
   }
   parseListSessionsRequest(value) {
@@ -682,7 +684,26 @@ function normalizeSessionMessage(value, index) {
     id: expectString(value.id, "id"),
     role: normalizeSessionMessageRole(value.role),
     content: expectString(value.content, "content"),
+    images: normalizeSessionMessageImages(value.images),
     createdAt: expectNullableString(value.createdAt, "createdAt")
+  };
+}
+function normalizeSessionMessageImages(value) {
+  if (value === void 0) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("\u5386\u53F2\u4F1A\u8BDD\u6D88\u606F images \u5FC5\u987B\u662F\u6570\u7EC4\u3002");
+  }
+  return value.map((item, index) => normalizeSessionMessageImage(item, index));
+}
+function normalizeSessionMessageImage(value, index) {
+  if (!isRecord(value)) {
+    throw new Error(`\u5386\u53F2\u4F1A\u8BDD\u56FE\u7247 ${index + 1} \u5FC5\u987B\u662F\u5BF9\u8C61\u3002`);
+  }
+  return {
+    base64: expectString(value.base64, "base64"),
+    mimeType: expectString(value.mimeType, "mimeType")
   };
 }
 function normalizeSessionMessageRole(value) {
@@ -709,6 +730,34 @@ function expectInteractionResponseValue(value, fieldName) {
     result[key] = item;
   }
   return result;
+}
+function normalizeImageAttachments(value) {
+  if (value === void 0 || value === null) {
+    return void 0;
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("images \u5FC5\u987B\u662F\u56FE\u7247\u6570\u7EC4\u3002");
+  }
+  return value.map((item, index) => {
+    if (!isRecord(item)) {
+      throw new Error(`images[${index}] \u5FC5\u987B\u662F\u5BF9\u8C61\u3002`);
+    }
+    const base64 = expectString(item.base64, `images[${index}].base64`).trim();
+    const mimeType = expectString(item.mimeType, `images[${index}].mimeType`).trim();
+    if (base64.length === 0) {
+      throw new Error(`images[${index}].base64 \u4E0D\u80FD\u4E3A\u7A7A\u3002`);
+    }
+    if (!isSupportedImageMimeType(mimeType)) {
+      throw new Error(`images[${index}].mimeType \u4E0D\u652F\u6301\uFF1A${mimeType}`);
+    }
+    return {
+      base64,
+      mimeType
+    };
+  });
+}
+function isSupportedImageMimeType(value) {
+  return value === "image/png" || value === "image/jpeg" || value === "image/gif" || value === "image/webp";
 }
 function normalizeToolSummary(value) {
   if (!isRecord(value)) {
@@ -1035,26 +1084,22 @@ var WorkspaceFileService = class {
   }
   async listDirectory(relativePath) {
     const directoryPath = this.pathGuard.resolveInsideWorkspace(relativePath);
+    const workspaceRoot = this.pathGuard.getWorkspaceRoot();
+    if (workspaceRoot === null) {
+      throw new Error("\u8BF7\u5148\u9009\u62E9\u5DE5\u4F5C\u533A\u3002");
+    }
     const entries = await (0, import_promises.readdir)(directoryPath, { withFileTypes: true });
     return entries.map((entry) => {
       const childAbsolutePath = import_node_path2.default.join(directoryPath, entry.name);
-      const workspaceRoot = this.pathGuard.getWorkspaceRoot();
-      if (workspaceRoot === null) {
-        throw new Error("\u8BF7\u5148\u9009\u62E9\u5DE5\u4F5C\u533A\u3002");
-      }
       const childRelativePath = import_node_path2.default.relative(workspaceRoot, childAbsolutePath);
       return {
         id: childRelativePath,
         name: entry.name,
         path: childRelativePath,
-        kind: entry.isDirectory() ? "folder" : "file"
+        kind: entry.isDirectory() ? "folder" : "file",
+        sortName: entry.name.toLowerCase()
       };
-    }).sort((left, right) => {
-      if (left.kind !== right.kind) {
-        return left.kind === "folder" ? -1 : 1;
-      }
-      return left.name.localeCompare(right.name, "zh-CN");
-    });
+    }).sort(compareWorkspaceDirectoryEntries).map(removeSortKey);
   }
   async readWorkspaceFile(relativePath) {
     const filePath = this.pathGuard.resolveInsideWorkspace(relativePath);
@@ -1207,6 +1252,26 @@ var WorkbenchIpcController = class {
     };
   }
 };
+function compareWorkspaceDirectoryEntries(left, right) {
+  if (left.kind !== right.kind) {
+    return left.kind === "folder" ? -1 : 1;
+  }
+  if (left.sortName < right.sortName) {
+    return -1;
+  }
+  if (left.sortName > right.sortName) {
+    return 1;
+  }
+  return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+}
+function removeSortKey(entry) {
+  return {
+    id: entry.id,
+    name: entry.name,
+    path: entry.path,
+    kind: entry.kind
+  };
+}
 function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

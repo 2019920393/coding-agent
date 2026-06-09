@@ -8,15 +8,20 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "dev:electron": "tsup electron/main.ts electron/preload.ts --format cjs --platform node --external electron --out-dir dist-electron --clean --watch",
-    "desktop": "concurrently -k \"npm:dev\" \"npm:dev:electron\" \"wait-on tcp:5173 dist-electron/main.cjs dist-electron/preload.cjs && set ELECTRON_RUN_AS_NODE=&& electron .\"",
+    "desktop": "concurrently -k \"npm:dev\" \"npm:dev:electron\" \"wait-on http://127.0.0.1:5173 dist-electron/main.cjs dist-electron/preload.cjs && set ELECTRON_RUN_AS_NODE=&& electron .\"",
     "build": "tsc -b && tsc -p tsconfig.electron.json && vite build && tsup electron/main.ts electron/preload.ts --format cjs --platform node --external electron --out-dir dist-electron --clean",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
     "@monaco-editor/react": "latest",
+    "highlight.js": "^11.11.1",
     "monaco-editor": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "latest",
@@ -24,7 +29,7 @@
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
     "concurrently": "latest",
-    "electron": "33.4.11",
+    "electron": "^33.4.11",
     "tsup": "latest",
     "typescript": "latest",
     "vite": "latest",

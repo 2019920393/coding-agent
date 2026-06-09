@@ -32,6 +32,9 @@ export interface WorkbenchState {
    */
   explorerNodes: ExplorerNode[];
 
+  /** 已读取过的目录第一层条目，用于收起后再次展开时避免重复磁盘 I/O。 */
+  directoryEntryCache: Record<string, WorkspaceDirectoryEntry[]>;
+
   /**
    * 当前已打开的编辑器 tab 文件列表。
    *
@@ -128,6 +131,7 @@ export function createInitialWorkbenchState(): WorkbenchState {
   return {
     workspace: null,
     explorerNodes: [],
+    directoryEntryCache: {},
     openFiles: [],
     activeFilePath: null,
     editorView: "welcome",
@@ -162,6 +166,7 @@ export function workbenchReducer(
         ...state,
         workspace: action.workspace,
         explorerNodes: createExplorerNodes(action.entries, 0),
+        directoryEntryCache: { "": action.entries },
         openFiles: [],
         activeFilePath: null,
         editorView: "welcome",
@@ -188,6 +193,7 @@ export function workbenchReducer(
       return {
         ...state,
         explorerNodes: createExplorerNodes(action.entries, 0),
+        directoryEntryCache: { "": action.entries },
         selectedPath: state.activeFilePath,
         status: "ready",
         statusMessage: "资源管理器根目录已刷新。"
@@ -196,6 +202,7 @@ export function workbenchReducer(
     case "directory/load-started":
       return {
         ...state,
+        explorerNodes: setDirectoryLoading(state.explorerNodes, action.path, true),
         selectedPath: action.path,
         status: "loading",
         statusMessage: "正在读取目录..."
@@ -209,6 +216,10 @@ export function workbenchReducer(
           action.parentPath,
           action.entries
         ),
+        directoryEntryCache: {
+          ...state.directoryEntryCache,
+          [action.parentPath]: action.entries
+        },
         selectedPath: action.parentPath,
         status: "ready",
         statusMessage: "目录已更新。"
@@ -262,6 +273,7 @@ export function workbenchReducer(
     case "operation/failed":
       return {
         ...state,
+        explorerNodes: clearDirectoryLoading(state.explorerNodes),
         status: "error",
         statusMessage: action.message
       };
@@ -288,7 +300,8 @@ function createExplorerNodes(
         path: entry.path,
         depth,
         kind: "folder",
-        expanded: false
+        expanded: false,
+        loading: false
       };
     }
 
@@ -327,7 +340,9 @@ function replaceDirectoryChildren(
   const nextSiblingIndex = findNextSiblingIndex(nodes, parentIndex);
   const childNodes = createExplorerNodes(entries, childDepth);
   const updatedParentNode: ExplorerNode =
-    parentNode.kind === "folder" ? { ...parentNode, expanded: true } : parentNode;
+    parentNode.kind === "folder"
+      ? { ...parentNode, expanded: true, loading: false }
+      : parentNode;
 
   return [
     ...nodes.slice(0, parentIndex),
@@ -378,9 +393,49 @@ function collapseDirectoryChildren(
 
   return [
     ...nodes.slice(0, parentIndex),
-    { ...parentNode, expanded: false },
+    { ...parentNode, expanded: false, loading: false },
     ...nodes.slice(nextSiblingIndex)
   ];
+}
+
+/**
+ * 标记某个目录正在读取，让用户点击后立即看到反馈。
+ */
+function setDirectoryLoading(
+  nodes: ExplorerNode[],
+  directoryPath: string,
+  loading: boolean
+): ExplorerNode[] {
+  let changed = false;
+
+  const nextNodes = nodes.map((node): ExplorerNode => {
+    if (node.kind !== "folder" || node.path !== directoryPath) {
+      return node;
+    }
+
+    changed = true;
+    return { ...node, loading };
+  });
+
+  return changed ? nextNodes : nodes;
+}
+
+/**
+ * 异常结束时清掉残留 loading 状态。
+ */
+function clearDirectoryLoading(nodes: ExplorerNode[]): ExplorerNode[] {
+  let changed = false;
+
+  const nextNodes = nodes.map((node): ExplorerNode => {
+    if (node.kind !== "folder" || !node.loading) {
+      return node;
+    }
+
+    changed = true;
+    return { ...node, loading: false };
+  });
+
+  return changed ? nextNodes : nodes;
 }
 
 /**

@@ -5,6 +5,7 @@ import type {
   PointerEvent as ReactPointerEvent
 } from "react";
 import type {
+  AiImageAttachment,
   AiPermissionMode,
   AiResolveInteractionRequest,
   AiSubmitMessageRequest
@@ -227,8 +228,19 @@ export default function App() {
   const handleOpenFolder = async (path: string) => {
     const folderNode = findExplorerNode(workbenchState.explorerNodes, path);
 
+    if (folderNode?.kind === "folder" && folderNode.loading) {
+      return;
+    }
+
     if (folderNode?.kind === "folder" && folderNode.expanded) {
       workbenchDispatch({ type: "directory/collapsed", path });
+      return;
+    }
+
+    const cachedEntries = workbenchState.directoryEntryCache[path];
+
+    if (cachedEntries !== undefined) {
+      workbenchDispatch({ type: "directory/loaded", parentPath: path, entries: cachedEntries });
       return;
     }
 
@@ -362,7 +374,7 @@ export default function App() {
     };
   }, [handleSaveFile]);
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, images?: AiImageAttachment[]) => {
     if (aiClient === null) {
       aiDispatch({
         type: "turn/local-error",
@@ -400,13 +412,15 @@ export default function App() {
       activeFilePath: workbenchState.activeFilePath,
       selectedPath: workbenchState.selectedPath,
       openFilePaths: workbenchState.openFiles.map((file) => file.path),
-      permissionMode: aiState.permissionMode
+      permissionMode: aiState.permissionMode,
+      images
     };
 
     aiDispatch({
       type: "turn/submitted",
       turnId,
       prompt: content,
+      images: images ?? [],
       createdAt: formatCurrentTime()
     });
 
@@ -672,8 +686,8 @@ export default function App() {
         />
         <AiChatPane
           state={aiState}
-          onSendMessage={(content) => {
-            void handleSendMessage(content);
+          onSendMessage={(content, images) => {
+            void handleSendMessage(content, images);
           }}
           onCancelTurn={() => {
             void handleCancelAiTurn();

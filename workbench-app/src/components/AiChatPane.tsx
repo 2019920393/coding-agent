@@ -22,10 +22,12 @@ import { MarkdownRenderer } from "./MarkdownRenderer";
 import { DiffViewer } from "./DiffViewer";
 import { TypingIndicator, ThinkingIndicator } from "./LoadingIndicator";
 import { Tooltip } from "./Tooltip";
+import { ImageAttachments, type ImageAttachment } from "./ImageAttachments";
+import type { AiImageAttachment } from "../../shared/aiProtocol";
 
 interface AiChatPaneProps {
   state: AiPanelState;
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, images?: AiImageAttachment[]) => void;
   onCancelTurn: () => void;
   onResolveInteraction: (request: AiResolveInteractionRequest) => void;
   onOpenAgentTeam: () => void;
@@ -46,6 +48,8 @@ interface TodoViewItem {
   status: AiTodoStatus;
   displayStatus: AiTodoStatus;
 }
+
+const IMAGE_ONLY_PROMPT = "请查看我发送的图片。";
 
 /**
  * 右侧 AI 对话面板。
@@ -68,6 +72,7 @@ export function AiChatPane({
   onDeleteSession
 }: AiChatPaneProps) {
   const [draft, setDraft] = useState("");
+  const [images, setImages] = useState<ImageAttachment[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const feedItems = buildConversationFeed(
     state.messages,
@@ -78,7 +83,7 @@ export function AiChatPane({
     state.workspacePath !== null &&
     state.activeTurnId === null &&
     state.sessionStatus !== "loading" &&
-    draft.trim().length > 0 &&
+    (draft.trim().length > 0 || images.length > 0) &&
     !isCancelling;
   const canCancel = state.activeTurnId !== null && !isCancelling;
 
@@ -94,8 +99,15 @@ export function AiChatPane({
       return;
     }
 
-    onSendMessage(draft.trim());
+    // 转换为协议格式
+    const imageAttachments: AiImageAttachment[] | undefined =
+      images.length > 0
+        ? images.map((img) => ({ base64: img.base64, mimeType: img.mimeType }))
+        : undefined;
+
+    onSendMessage(draft.trim() || IMAGE_ONLY_PROMPT, imageAttachments);
     setDraft("");
+    setImages([]);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -164,7 +176,9 @@ export function AiChatPane({
                 <ActivityCard key={feedItem.item.id} card={feedItem.item} />
               )
             )}
-            {state.activeTurnId !== null && feedItems.length > 0 && (
+            {state.activeTurnId !== null &&
+             feedItems.length > 0 &&
+             state.status === "streaming" && (
               <div className="codo-typing-wrapper">
                 <TypingIndicator />
               </div>
@@ -185,6 +199,13 @@ export function AiChatPane({
 
       <form className="ai-chat-pane__composer" onSubmit={handleSubmit}>
         <div className="ai-chat-pane__composer-box">
+          <ImageAttachments
+            images={images}
+            onImagesChange={setImages}
+            disabled={state.workspacePath === null || state.activeTurnId !== null}
+            maxImages={5}
+            maxSizeMB={10}
+          />
           <label className="ai-chat-pane__input-label">
             <textarea
               value={draft}
@@ -291,10 +312,17 @@ function SessionHistoryMenu({
 }: SessionHistoryMenuProps) {
   const [open, setOpen] = useState(false);
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     setOpen(false);
   }, [sessions, selectedSessionId]);
+
+  useEffect(() => {
+    if (!open) {
+      setSearchQuery('');
+    }
+  }, [open]);
 
   const selectedSession = sessions.find((session) => session.sessionId === selectedSessionId);
   const buttonTitle =
@@ -306,6 +334,11 @@ function SessionHistoryMenu({
       onDeleteSession(sessionId);
     }
   };
+
+  // 过滤会话列表
+  const filteredSessions = sessions.filter((session) =>
+    cleanSessionTitle(session.title).toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="codo-session-menu">
@@ -324,11 +357,28 @@ function SessionHistoryMenu({
             <strong>历史会话</strong>
             <span>{formatSessionStatusText(sessionStatus, sessions.length)}</span>
           </div>
+          {sessions.length > 3 && (
+            <div className="codo-session-menu__search">
+              <div className="codo-session-menu__search-wrapper">
+                <span className="codo-session-menu__search-icon">🔍</span>
+                <input
+                  type="text"
+                  className="codo-session-menu__search-input"
+                  placeholder="搜索会话..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            </div>
+          )}
           {sessions.length === 0 ? (
             <p className="codo-session-menu__empty">{sessionMessage}</p>
+          ) : filteredSessions.length === 0 ? (
+            <p className="codo-session-menu__empty">未找到匹配的会话</p>
           ) : (
             <div className="codo-session-menu__list">
-              {sessions.map((session) => (
+              {filteredSessions.map((session) => (
                 <div
                   className="codo-session-menu__item-wrapper"
                   key={session.sessionId}
@@ -400,15 +450,26 @@ function InlineAgentTeam({ agents, activeAgentId, onOpenAgentTeam }: InlineAgent
     agents.find((agent) => agent.status === "running") ??
     agents[0];
 
+  // 计算整体进度
+  const totalTasks = agents.length;
+  const completedTasks = completedCount + errorCount;
+  const progressPercentage = Math.round((completedTasks / totalTasks) * 100);
+
   return (
     <section className="codo-inline-agent" aria-label="Agent Team">
       <div className="codo-inline-agent__header">
         <div>
-          <h3>Agent Team</h3>
-          <p>{formatAgentTeamSummary(runningCount, completedCount, errorCount)}</p>
+          <h3>
+            🤖 Agent Team
+            {runningCount > 0 && <span className="codo-agent-running-badge">{runningCount} 运行中</span>}
+          </h3>
+          <p>
+            {formatAgentTeamSummary(runningCount, completedCount, errorCount)}
+            {totalTasks > 1 && ` · 进度 ${progressPercentage}%`}
+          </p>
         </div>
         <button type="button" onClick={onOpenAgentTeam} title="在中间工作区打开 Agent Team">
-          打开
+          打开面板
         </button>
       </div>
       <div className="codo-inline-agent__focus">
@@ -845,6 +906,15 @@ interface AiMessageBubbleProps {
 function AiMessageBubble({ message }: AiMessageBubbleProps) {
   const content = message.content || placeholderForMessage(message);
   const shouldRenderMarkdown = message.role === "assistant" && message.content.trim().length > 0;
+  const hasImages = message.images.length > 0;
+  const hasVisibleContent = content.trim().length > 0;
+  const bubbleClassName = [
+    "ai-message__bubble",
+    hasImages ? "ai-message__bubble--with-images" : "",
+    hasImages && !hasVisibleContent ? "ai-message__bubble--image-only" : ""
+  ]
+    .filter((className) => className.length > 0)
+    .join(" ");
 
   return (
     <article
@@ -854,12 +924,17 @@ function AiMessageBubble({ message }: AiMessageBubbleProps) {
         <span>{formatRoleText(message.role)}</span>
         <time>{message.createdAt}</time>
       </div>
-      <div className="ai-message__bubble">
-        {shouldRenderMarkdown ? (
-          <MarkdownRenderer content={content} />
-        ) : (
-          content
-        )}
+      <div className={bubbleClassName}>
+        {hasImages ? <MessageImageGrid images={message.images} /> : null}
+        {hasVisibleContent ? (
+          <div className="ai-message__content">
+            {shouldRenderMarkdown ? (
+              <MarkdownRenderer content={content} />
+            ) : (
+              content
+            )}
+          </div>
+        ) : null}
       </div>
     </article>
   );
@@ -927,6 +1002,31 @@ function ActivityCard({ card }: ActivityCardProps) {
         ) : null}
       </div>
     </article>
+  );
+}
+
+interface MessageImageGridProps {
+  images: AiImageAttachment[];
+}
+
+function MessageImageGrid({ images }: MessageImageGridProps) {
+  const className = [
+    "ai-message__images",
+    images.length === 1 ? "ai-message__images--single" : "ai-message__images--grid"
+  ].join(" ");
+
+  return (
+    <div className={className} aria-label={`附加图片 ${images.length} 张`}>
+      {images.map((image, index) => (
+        <img
+          key={`${image.mimeType}-${index}-${image.base64.slice(0, 16)}`}
+          className="ai-message__image"
+          src={`data:${image.mimeType};base64,${image.base64}`}
+          alt={`附加图片 ${index + 1}`}
+          loading="lazy"
+        />
+      ))}
+    </div>
   );
 }
 

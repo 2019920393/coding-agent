@@ -21,6 +21,10 @@ const BYTES_PER_KIBIBYTE = 1024;
 const BYTES_PER_MEBIBYTE = BYTES_PER_KIBIBYTE * 1024;
 const MAX_READ_FILE_BYTES = 5 * BYTES_PER_MEBIBYTE;
 
+interface SortableWorkspaceDirectoryEntry extends WorkspaceDirectoryEntry {
+  sortName: string;
+}
+
 /**
  * 工作区路径安全边界。
  *
@@ -95,33 +99,29 @@ class WorkspaceFileService {
 
   public async listDirectory(relativePath: string): Promise<WorkspaceDirectoryEntry[]> {
     const directoryPath = this.pathGuard.resolveInsideWorkspace(relativePath);
+    const workspaceRoot = this.pathGuard.getWorkspaceRoot();
+
+    if (workspaceRoot === null) {
+      throw new Error("请先选择工作区。");
+    }
+
     const entries = await readdir(directoryPath, { withFileTypes: true });
 
     return entries
-      .map((entry): WorkspaceDirectoryEntry => {
+      .map((entry): SortableWorkspaceDirectoryEntry => {
         const childAbsolutePath = path.join(directoryPath, entry.name);
-        const workspaceRoot = this.pathGuard.getWorkspaceRoot();
-
-        if (workspaceRoot === null) {
-          throw new Error("请先选择工作区。");
-        }
-
         const childRelativePath = path.relative(workspaceRoot, childAbsolutePath);
 
         return {
           id: childRelativePath,
           name: entry.name,
           path: childRelativePath,
-          kind: entry.isDirectory() ? "folder" : "file"
+          kind: entry.isDirectory() ? "folder" : "file",
+          sortName: entry.name.toLowerCase()
         };
       })
-      .sort((left, right) => {
-        if (left.kind !== right.kind) {
-          return left.kind === "folder" ? -1 : 1;
-        }
-
-        return left.name.localeCompare(right.name, "zh-CN");
-      });
+      .sort(compareWorkspaceDirectoryEntries)
+      .map(removeSortKey);
   }
 
   public async readWorkspaceFile(relativePath: string): Promise<WorkspaceReadFileResult> {
@@ -315,6 +315,34 @@ class WorkbenchIpcController {
       content: contentValue
     };
   }
+}
+
+function compareWorkspaceDirectoryEntries(
+  left: SortableWorkspaceDirectoryEntry,
+  right: SortableWorkspaceDirectoryEntry
+): number {
+  if (left.kind !== right.kind) {
+    return left.kind === "folder" ? -1 : 1;
+  }
+
+  if (left.sortName < right.sortName) {
+    return -1;
+  }
+
+  if (left.sortName > right.sortName) {
+    return 1;
+  }
+
+  return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+}
+
+function removeSortKey(entry: SortableWorkspaceDirectoryEntry): WorkspaceDirectoryEntry {
+  return {
+    id: entry.id,
+    name: entry.name,
+    path: entry.path,
+    kind: entry.kind
+  };
 }
 
 /**
