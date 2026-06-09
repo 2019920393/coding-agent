@@ -34,6 +34,7 @@ const CHAT_PANE_WIDTH_STORAGE_KEY = "codo.workbench.chatPaneWidth";
 const DEFAULT_CHAT_PANE_WIDTH = 480;
 const MIN_CHAT_PANE_WIDTH = 320;
 const MAX_CHAT_PANE_WIDTH = 680;
+const ELECTRON_REMOTE_ERROR_PREFIX_PATTERN = /^Error invoking remote method '[^']+':\s*/;
 
 /**
  * Codo Workbench 根组件。
@@ -724,10 +725,19 @@ function hasWorkbenchApi(): boolean {
  */
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
-    return error.message;
+    return normalizeErrorMessage(error.message);
   }
 
   return "操作失败。";
+}
+
+/**
+ * 清理 Electron IPC 包装错误，只把业务错误展示给用户。
+ */
+function normalizeErrorMessage(message: string): string {
+  return message
+    .replace(ELECTRON_REMOTE_ERROR_PREFIX_PATTERN, "")
+    .replace(/^Error:\s*/, "");
 }
 
 /**

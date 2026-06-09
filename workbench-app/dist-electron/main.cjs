@@ -1088,7 +1088,12 @@ var WorkspaceFileService = class {
     if (workspaceRoot === null) {
       throw new Error("\u8BF7\u5148\u9009\u62E9\u5DE5\u4F5C\u533A\u3002");
     }
-    const entries = await (0, import_promises.readdir)(directoryPath, { withFileTypes: true });
+    let entries;
+    try {
+      entries = await (0, import_promises.readdir)(directoryPath, { withFileTypes: true });
+    } catch (error) {
+      throw createDirectoryReadError(error, relativePath);
+    }
     return entries.map((entry) => {
       const childAbsolutePath = import_node_path2.default.join(directoryPath, entry.name);
       const childRelativePath = import_node_path2.default.relative(workspaceRoot, childAbsolutePath);
@@ -1271,6 +1276,26 @@ function removeSortKey(entry) {
     path: entry.path,
     kind: entry.kind
   };
+}
+function createDirectoryReadError(error, relativePath) {
+  const displayPath = relativePath.trim() === "" ? "." : relativePath;
+  const errorCode = getFileSystemErrorCode(error);
+  if (errorCode === "EPERM" || errorCode === "EACCES") {
+    return new Error(`\u6CA1\u6709\u6743\u9650\u8BFB\u53D6\u76EE\u5F55\uFF1A${displayPath}\u3002\u8BF7\u68C0\u67E5 Windows \u6587\u4EF6\u5939\u6743\u9650\uFF0C\u6216\u8DF3\u8FC7\u8BE5\u76EE\u5F55\u3002`);
+  }
+  if (errorCode === "ENOENT") {
+    return new Error(`\u76EE\u5F55\u4E0D\u5B58\u5728\u6216\u5DF2\u88AB\u5220\u9664\uFF1A${displayPath}\u3002\u8BF7\u5237\u65B0\u8D44\u6E90\u7BA1\u7406\u5668\u3002`);
+  }
+  if (error instanceof Error) {
+    return new Error(`\u8BFB\u53D6\u76EE\u5F55\u5931\u8D25\uFF1A${displayPath}\u3002${error.message}`);
+  }
+  return new Error(`\u8BFB\u53D6\u76EE\u5F55\u5931\u8D25\uFF1A${displayPath}\u3002`);
+}
+function getFileSystemErrorCode(error) {
+  if (!isRecord2(error)) {
+    return null;
+  }
+  return typeof error.code === "string" ? error.code : null;
 }
 function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);

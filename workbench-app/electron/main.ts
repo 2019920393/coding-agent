@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron";
 import type { IpcMainInvokeEvent, OpenDialogReturnValue } from "electron";
+import type { Dirent } from "node:fs";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { WorkbenchAiBridge } from "./aiBridge.js";
@@ -105,7 +106,13 @@ class WorkspaceFileService {
       throw new Error("请先选择工作区。");
     }
 
-    const entries = await readdir(directoryPath, { withFileTypes: true });
+    let entries: Dirent[];
+
+    try {
+      entries = await readdir(directoryPath, { withFileTypes: true });
+    } catch (error) {
+      throw createDirectoryReadError(error, relativePath);
+    }
 
     return entries
       .map((entry): SortableWorkspaceDirectoryEntry => {
@@ -343,6 +350,44 @@ function removeSortKey(entry: SortableWorkspaceDirectoryEntry): WorkspaceDirecto
     path: entry.path,
     kind: entry.kind
   };
+}
+
+/**
+ * 把 Node 文件系统异常转换成面向用户的目录读取错误。
+ *
+ * 工作流：
+ * 1. 保留 main process 的真实权限校验和路径边界校验。
+ * 2. 对 Windows 常见的 EPERM/EACCES 给出可读原因。
+ * 3. 其他异常继续携带原始 message，便于定位磁盘或路径问题。
+ */
+function createDirectoryReadError(error: unknown, relativePath: string): Error {
+  const displayPath = relativePath.trim() === "" ? "." : relativePath;
+  const errorCode = getFileSystemErrorCode(error);
+
+  if (errorCode === "EPERM" || errorCode === "EACCES") {
+    return new Error(`没有权限读取目录：${displayPath}。请检查 Windows 文件夹权限，或跳过该目录。`);
+  }
+
+  if (errorCode === "ENOENT") {
+    return new Error(`目录不存在或已被删除：${displayPath}。请刷新资源管理器。`);
+  }
+
+  if (error instanceof Error) {
+    return new Error(`读取目录失败：${displayPath}。${error.message}`);
+  }
+
+  return new Error(`读取目录失败：${displayPath}。`);
+}
+
+/**
+ * 从 Node 文件系统异常中读取稳定错误码。
+ */
+function getFileSystemErrorCode(error: unknown): string | null {
+  if (!isRecord(error)) {
+    return null;
+  }
+
+  return typeof error.code === "string" ? error.code : null;
 }
 
 /**
