@@ -1,5 +1,5 @@
 import Editor from "@monaco-editor/react";
-import type { OnMount } from "@monaco-editor/react";
+import type { EditorProps, OnMount } from "@monaco-editor/react";
 import type { AiAgentSummary } from "../../shared/aiProtocol";
 import type { EditorCursorPosition, EditorView, OpenFile } from "../types";
 
@@ -18,6 +18,17 @@ interface EditorPaneProps {
   onCursorPositionChange: (position: EditorCursorPosition) => void;
   onSaveFile: () => void;
 }
+
+const MONACO_EDITOR_OPTIONS: NonNullable<EditorProps["options"]> = {
+  automaticLayout: true,
+  fontSize: 14,
+  minimap: { enabled: false },
+  readOnly: false,
+  renderWhitespace: "selection",
+  scrollBeyondLastLine: false,
+  tabSize: 2,
+  wordWrap: "off"
+};
 
 /**
  * 中间编辑器面板。
@@ -106,16 +117,7 @@ export function EditorPane({
           theme="vs-dark"
           onChange={(value) => onChangeFileContent(activeFile.path, value ?? "")}
           onMount={handleEditorMount}
-          options={{
-            automaticLayout: true,
-            fontSize: 14,
-            minimap: { enabled: false },
-            readOnly: false,
-            renderWhitespace: "selection",
-            scrollBeyondLastLine: false,
-            tabSize: 2,
-            wordWrap: "off"
-          }}
+          options={MONACO_EDITOR_OPTIONS}
         />
       </section>
     </main>

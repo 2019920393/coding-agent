@@ -1,13 +1,18 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron";
 import type { IpcMainInvokeEvent, OpenDialogReturnValue } from "electron";
 import type { Dirent } from "node:fs";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { WorkbenchAiBridge } from "./aiBridge.js";
 import type {
+  WorkspaceCreateEntryRequest,
+  WorkspaceCreateEntryResult,
+  WorkspaceDeleteEntryRequest,
   WorkspaceDirectoryEntry,
   WorkspaceInfo,
   WorkspaceReadFileResult,
+  WorkspaceRenameEntryRequest,
+  WorkspaceRenameEntryResult,
   WorkspaceWriteFileRequest,
   WorkspaceWriteFileResult
 } from "../shared/ipcTypes.js";
@@ -187,6 +192,111 @@ class WorkspaceFileService {
       path: request.path
     };
   }
+
+  /**
+   * 在工作区内新建文件或空文件夹。
+   *
+   * 工作流：
+   * 1. 父目录通过 PathGuard 解析，确认在 workspace 内。
+   * 2. name 只允许单段文件名，再把最终目标反算为相对路径并再次交给 PathGuard。
+   * 3. 文件用 wx 原子创建，文件夹用 mkdir，均不覆盖同名项。
+   */
+  public async createEntry(
+    request: WorkspaceCreateEntryRequest
+  ): Promise<WorkspaceCreateEntryResult> {
+    const entryName = assertValidEntryName(request.name);
+    const parentPath = this.pathGuard.resolveInsideWorkspace(request.parentPath);
+    const targetPath = this.resolveTargetInsideWorkspace(parentPath, entryName);
+    const targetRelativePath = this.getRelativeWorkspacePath(targetPath);
+
+    try {
+      if (request.kind === "file") {
+        await writeFile(targetPath, "", { encoding: "utf8", flag: "wx" });
+      } else {
+        await mkdir(targetPath);
+      }
+    } catch (error) {
+      throw createWorkspaceMutationError(error, "新建失败");
+    }
+
+    return {
+      path: targetRelativePath,
+      name: entryName,
+      kind: request.kind
+    };
+  }
+
+  /**
+   * 重命名工作区内文件或文件夹。
+   *
+   * 工作流：
+   * 1. 旧路径与新路径都通过 PathGuard。
+   * 2. newName 只允许同级名称，不允许路径分隔符。
+   * 3. 目标已存在时拒绝，避免 fs.rename 覆盖文件。
+   */
+  public async renameEntry(
+    request: WorkspaceRenameEntryRequest
+  ): Promise<WorkspaceRenameEntryResult> {
+    const entryName = assertValidEntryName(request.newName);
+    const sourcePath = this.pathGuard.resolveInsideWorkspace(request.path);
+    const targetPath = this.resolveTargetInsideWorkspace(path.dirname(sourcePath), entryName);
+    const targetRelativePath = this.getRelativeWorkspacePath(targetPath);
+
+    await assertPathDoesNotExist(targetPath);
+
+    try {
+      await rename(sourcePath, targetPath);
+    } catch (error) {
+      throw createWorkspaceMutationError(error, "重命名失败");
+    }
+
+    return {
+      path: targetRelativePath,
+      name: entryName
+    };
+  }
+
+  /**
+   * 删除工作区内文件或文件夹。
+   *
+   * 工作流：
+   * 1. 目标路径通过 PathGuard。
+   * 2. 解析结果等于 workspace root 时直接拒绝。
+   * 3. 使用 fs.rm 递归删除文件夹，force=false 保留真实错误。
+   */
+  public async deleteEntry(request: WorkspaceDeleteEntryRequest): Promise<void> {
+    const targetPath = this.pathGuard.resolveInsideWorkspace(request.path);
+    const workspaceRoot = this.getRequiredWorkspaceRoot();
+
+    if (path.resolve(targetPath) === path.resolve(workspaceRoot)) {
+      throw new Error("不能删除工作区根目录。");
+    }
+
+    try {
+      await rm(targetPath, { recursive: true, force: false });
+    } catch (error) {
+      throw createWorkspaceMutationError(error, "删除失败");
+    }
+  }
+
+  private resolveTargetInsideWorkspace(parentPath: string, entryName: string): string {
+    const targetPath = path.join(parentPath, entryName);
+    const targetRelativePath = path.relative(this.getRequiredWorkspaceRoot(), targetPath);
+    return this.pathGuard.resolveInsideWorkspace(targetRelativePath);
+  }
+
+  private getRelativeWorkspacePath(absolutePath: string): string {
+    return path.relative(this.getRequiredWorkspaceRoot(), absolutePath);
+  }
+
+  private getRequiredWorkspaceRoot(): string {
+    const workspaceRoot = this.pathGuard.getWorkspaceRoot();
+    if (workspaceRoot === null) {
+      throw new Error("请先选择工作区。");
+    }
+
+    return workspaceRoot;
+  }
 }
 
 /**
@@ -267,6 +377,15 @@ class WorkbenchIpcController {
     ipcMain.handle("fs:write-file", (_event: IpcMainInvokeEvent, request: unknown) =>
       this.writeFile(request)
     );
+    ipcMain.handle("fs:create-entry", (_event: IpcMainInvokeEvent, request: unknown) =>
+      this.createEntry(request)
+    );
+    ipcMain.handle("fs:rename-entry", (_event: IpcMainInvokeEvent, request: unknown) =>
+      this.renameEntry(request)
+    );
+    ipcMain.handle("fs:delete-entry", (_event: IpcMainInvokeEvent, request: unknown) =>
+      this.deleteEntry(request)
+    );
   }
 
   private async selectWorkspace(): Promise<WorkspaceInfo | null> {
@@ -283,6 +402,18 @@ class WorkbenchIpcController {
 
   private async writeFile(request: unknown): Promise<WorkspaceWriteFileResult> {
     return this.fileService.writeWorkspaceFile(this.parseWriteFileRequest(request));
+  }
+
+  private async createEntry(request: unknown): Promise<WorkspaceCreateEntryResult> {
+    return this.fileService.createEntry(this.parseCreateEntryRequest(request));
+  }
+
+  private async renameEntry(request: unknown): Promise<WorkspaceRenameEntryResult> {
+    return this.fileService.renameEntry(this.parseRenameEntryRequest(request));
+  }
+
+  private async deleteEntry(request: unknown): Promise<void> {
+    await this.fileService.deleteEntry(this.parseDeleteEntryRequest(request));
   }
 
   private parseRelativePath(value: unknown): string {
@@ -322,6 +453,72 @@ class WorkbenchIpcController {
       content: contentValue
     };
   }
+
+  private parseCreateEntryRequest(value: unknown): WorkspaceCreateEntryRequest {
+    if (!isRecord(value)) {
+      throw new Error("新建参数必须是对象。");
+    }
+
+    const parentPathValue = value.parentPath;
+    const nameValue = value.name;
+    const kindValue = value.kind;
+
+    if (typeof parentPathValue !== "string") {
+      throw new Error("新建父目录路径必须是字符串。");
+    }
+
+    if (typeof nameValue !== "string") {
+      throw new Error("新建名称必须是字符串。");
+    }
+
+    if (kindValue !== "file" && kindValue !== "folder") {
+      throw new Error("新建类型必须是 file 或 folder。");
+    }
+
+    return {
+      parentPath: parentPathValue,
+      name: nameValue,
+      kind: kindValue
+    };
+  }
+
+  private parseRenameEntryRequest(value: unknown): WorkspaceRenameEntryRequest {
+    if (!isRecord(value)) {
+      throw new Error("重命名参数必须是对象。");
+    }
+
+    const pathValue = value.path;
+    const newNameValue = value.newName;
+
+    if (typeof pathValue !== "string") {
+      throw new Error("重命名路径必须是字符串。");
+    }
+
+    if (typeof newNameValue !== "string") {
+      throw new Error("新名称必须是字符串。");
+    }
+
+    return {
+      path: pathValue,
+      newName: newNameValue
+    };
+  }
+
+  private parseDeleteEntryRequest(value: unknown): WorkspaceDeleteEntryRequest {
+    if (!isRecord(value)) {
+      throw new Error("删除参数必须是对象。");
+    }
+
+    const pathValue = value.path;
+
+    if (typeof pathValue !== "string") {
+      throw new Error("删除路径必须是字符串。");
+    }
+
+    return {
+      path: pathValue
+    };
+  }
 }
 
 function compareWorkspaceDirectoryEntries(
@@ -350,6 +547,68 @@ function removeSortKey(entry: SortableWorkspaceDirectoryEntry): WorkspaceDirecto
     path: entry.path,
     kind: entry.kind
   };
+}
+
+function assertValidEntryName(name: string): string {
+  const trimmedName = name.trim();
+
+  if (trimmedName.length === 0) {
+    throw new Error("名称不能为空。");
+  }
+
+  if (trimmedName === "." || trimmedName === "..") {
+    throw new Error("名称不能是 . 或 ..。");
+  }
+
+  if (trimmedName.includes("/") || trimmedName.includes("\\")) {
+    throw new Error("名称不能包含路径分隔符。");
+  }
+
+  if (path.isAbsolute(trimmedName)) {
+    throw new Error("名称不能是绝对路径。");
+  }
+
+  return trimmedName;
+}
+
+async function assertPathDoesNotExist(targetPath: string): Promise<void> {
+  try {
+    await access(targetPath);
+  } catch (error) {
+    if (getFileSystemErrorCode(error) === "ENOENT") {
+      return;
+    }
+
+    if (error instanceof Error) {
+      throw new Error(`无法确认目标是否存在：${error.message}`);
+    }
+
+    throw new Error("无法确认目标是否存在。");
+  }
+
+  throw new Error("同名项已存在。");
+}
+
+function createWorkspaceMutationError(error: unknown, actionLabel: string): Error {
+  const errorCode = getFileSystemErrorCode(error);
+
+  if (errorCode === "EEXIST") {
+    return new Error("同名项已存在。");
+  }
+
+  if (errorCode === "ENOENT") {
+    return new Error(`${actionLabel}：目标路径不存在，请刷新资源管理器。`);
+  }
+
+  if (errorCode === "EPERM" || errorCode === "EACCES") {
+    return new Error(`${actionLabel}：没有权限操作该路径。`);
+  }
+
+  if (error instanceof Error) {
+    return new Error(`${actionLabel}：${error.message}`);
+  }
+
+  return new Error(`${actionLabel}。`);
 }
 
 /**

@@ -40,6 +40,32 @@ export interface WorkspaceWriteFileResult {
   path: string;
 }
 
+export interface WorkspaceCreateEntryRequest {
+  parentPath: string;
+  name: string;
+  kind: WorkspaceDirectoryEntryKind;
+}
+
+export interface WorkspaceCreateEntryResult {
+  path: string;
+  name: string;
+  kind: WorkspaceDirectoryEntryKind;
+}
+
+export interface WorkspaceRenameEntryRequest {
+  path: string;
+  newName: string;
+}
+
+export interface WorkspaceRenameEntryResult {
+  path: string;
+  name: string;
+}
+
+export interface WorkspaceDeleteEntryRequest {
+  path: string;
+}
+
 export interface CodoWorkspaceApi {
   /**
    * 让用户通过系统窗口选择一个工作区目录。
@@ -80,6 +106,36 @@ export interface CodoWorkspaceApi {
    * 3. 写入成功后返回文件名和相对路径，不返回文件内容。
    */
   writeFile(request: WorkspaceWriteFileRequest): Promise<WorkspaceWriteFileResult>;
+
+  /**
+   * 在工作区内新建文件或空文件夹。
+   *
+   * 工作流：
+   * 1. Renderer 传入父目录相对路径、名称和类型。
+   * 2. Main process 校验父目录和最终目标都不能逃出 workspace。
+   * 3. 创建成功后返回新条目的相对路径、名称和类型。
+   */
+  createEntry(request: WorkspaceCreateEntryRequest): Promise<WorkspaceCreateEntryResult>;
+
+  /**
+   * 重命名工作区内单个文件或文件夹。
+   *
+   * 工作流：
+   * 1. Renderer 传入旧相对路径和同级新名称。
+   * 2. Main process 校验旧路径、新路径和名称合法性。
+   * 3. 成功后返回新相对路径和新名称。
+   */
+  renameEntry(request: WorkspaceRenameEntryRequest): Promise<WorkspaceRenameEntryResult>;
+
+  /**
+   * 删除工作区内单个文件或文件夹。
+   *
+   * 工作流：
+   * 1. Renderer 传入目标相对路径。
+   * 2. Main process 校验路径边界并拒绝删除 workspace 根目录。
+   * 3. 文件夹会递归删除，成功后不返回内容。
+   */
+  deleteEntry(request: WorkspaceDeleteEntryRequest): Promise<void>;
 }
 
 export interface CodoAiApi {

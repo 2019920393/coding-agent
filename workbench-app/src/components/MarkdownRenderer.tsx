@@ -1,3 +1,4 @@
+import { isValidElement, memo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
@@ -7,7 +8,7 @@ interface MarkdownRendererProps {
   content: string;
 }
 
-export function MarkdownRenderer({ content }: MarkdownRendererProps) {
+export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: MarkdownRendererProps) {
   return (
     <ReactMarkdown
       rehypePlugins={[rehypeHighlight, rehypeRaw]}
@@ -33,17 +34,8 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           );
         },
         pre({ children, ...props }) {
-          // 从子元素中提取语言信息
-          let language = 'code';
-          if (children && typeof children === 'object' && 'props' in children) {
-            const codeProps = children.props as any;
-            if (codeProps?.['data-language']) {
-              language = codeProps['data-language'];
-            }
-          }
-
           return (
-            <pre className="code-block" data-language={language} {...props}>
+            <pre className="code-block" data-language={getPreLanguage(children)} {...props}>
               {children}
             </pre>
           );
@@ -60,4 +52,15 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
       {content}
     </ReactMarkdown>
   );
+});
+
+function getPreLanguage(children: ReactNode): string {
+  if (isValidElement<{ "data-language"?: unknown }>(children)) {
+    const language = children.props["data-language"];
+    if (typeof language === "string" && language.length > 0) {
+      return language;
+    }
+  }
+
+  return "code";
 }

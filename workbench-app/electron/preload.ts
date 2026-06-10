@@ -12,9 +12,14 @@ import type {
 } from "../shared/aiProtocol.js";
 import type {
   CodoWorkbenchApi,
+  WorkspaceCreateEntryRequest,
+  WorkspaceCreateEntryResult,
+  WorkspaceDeleteEntryRequest,
   WorkspaceDirectoryEntry,
   WorkspaceInfo,
   WorkspaceReadFileResult,
+  WorkspaceRenameEntryRequest,
+  WorkspaceRenameEntryResult,
   WorkspaceWriteFileRequest,
   WorkspaceWriteFileResult
 } from "../shared/ipcTypes.js";
@@ -40,7 +45,10 @@ class CodoWorkbenchPreload {
         selectWorkspace: () => this.selectWorkspace(),
         listDirectory: (relativePath: string) => this.listDirectory(relativePath),
         readFile: (relativePath: string) => this.readFile(relativePath),
-        writeFile: (request: WorkspaceWriteFileRequest) => this.writeFile(request)
+        writeFile: (request: WorkspaceWriteFileRequest) => this.writeFile(request),
+        createEntry: (request: WorkspaceCreateEntryRequest) => this.createEntry(request),
+        renameEntry: (request: WorkspaceRenameEntryRequest) => this.renameEntry(request),
+        deleteEntry: (request: WorkspaceDeleteEntryRequest) => this.deleteEntry(request)
       },
       ai: {
         listSessions: (request: AiListSessionsRequest) => this.listSessions(request),
@@ -101,6 +109,31 @@ class CodoWorkbenchPreload {
     request: WorkspaceWriteFileRequest
   ): Promise<WorkspaceWriteFileResult> {
     return ipcRenderer.invoke("fs:write-file", request) as Promise<WorkspaceWriteFileResult>;
+  }
+
+  /**
+   * 在 workspace 内新建文件或文件夹。
+   */
+  private async createEntry(
+    request: WorkspaceCreateEntryRequest
+  ): Promise<WorkspaceCreateEntryResult> {
+    return ipcRenderer.invoke("fs:create-entry", request) as Promise<WorkspaceCreateEntryResult>;
+  }
+
+  /**
+   * 重命名 workspace 内条目。
+   */
+  private async renameEntry(
+    request: WorkspaceRenameEntryRequest
+  ): Promise<WorkspaceRenameEntryResult> {
+    return ipcRenderer.invoke("fs:rename-entry", request) as Promise<WorkspaceRenameEntryResult>;
+  }
+
+  /**
+   * 删除 workspace 内条目。
+   */
+  private async deleteEntry(request: WorkspaceDeleteEntryRequest): Promise<void> {
+    await ipcRenderer.invoke("fs:delete-entry", request);
   }
 
   /**

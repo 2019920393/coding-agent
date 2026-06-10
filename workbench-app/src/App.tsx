@@ -10,6 +10,11 @@ import type {
   AiResolveInteractionRequest,
   AiSubmitMessageRequest
 } from "../shared/aiProtocol";
+import type {
+  WorkspaceCreateEntryRequest,
+  WorkspaceDeleteEntryRequest,
+  WorkspaceRenameEntryRequest
+} from "../shared/ipcTypes";
 import { ActivityBar } from "./components/ActivityBar";
 import { AiChatPane } from "./components/AiChatPane";
 import { EditorPane } from "./components/EditorPane";
@@ -33,7 +38,10 @@ import type { EditorCursorPosition, EditorStatusInfo, ExplorerNode, OpenFile } f
 const CHAT_PANE_WIDTH_STORAGE_KEY = "codo.workbench.chatPaneWidth";
 const DEFAULT_CHAT_PANE_WIDTH = 480;
 const MIN_CHAT_PANE_WIDTH = 320;
+const MIN_COMPACT_CHAT_PANE_WIDTH = 280;
 const MAX_CHAT_PANE_WIDTH = 680;
+const MIN_EDITOR_PANE_WIDTH = 360;
+const CHAT_RESIZER_WIDTH = 6;
 const ELECTRON_REMOTE_ERROR_PREFIX_PATTERN = /^Error invoking remote method '[^']+':\s*/;
 
 /**
@@ -287,6 +295,112 @@ export default function App() {
     }
   };
 
+  const handleRefreshExplorerDirectory = async (
+    parentPath: string,
+    selectedPath?: string | null
+  ): Promise<boolean> => {
+    if (workspaceClient === null) {
+      workbenchDispatch({
+        type: "operation/failed",
+        message: "当前页面没有 Electron preload API，请通过桌面应用启动。"
+      });
+      return false;
+    }
+
+    if (workbenchState.workspace === null) {
+      workbenchDispatch({ type: "operation/failed", message: "请先选择工作区。" });
+      return false;
+    }
+
+    if (parentPath === "") {
+      workbenchDispatch({ type: "workspace/root-refresh-started" });
+    } else {
+      workbenchDispatch({ type: "directory/load-started", path: parentPath });
+    }
+
+    try {
+      const entries = await workspaceClient.listDirectory(parentPath);
+      if (parentPath === "") {
+        workbenchDispatch({ type: "workspace/root-refreshed", entries, selectedPath });
+      } else {
+        workbenchDispatch({ type: "directory/loaded", parentPath, entries, selectedPath });
+      }
+      return true;
+    } catch (error) {
+      workbenchDispatch({ type: "operation/failed", message: getErrorMessage(error) });
+      return false;
+    }
+  };
+
+  const handleCreateExplorerEntry = async (
+    request: WorkspaceCreateEntryRequest
+  ): Promise<boolean> => {
+    if (workspaceClient === null) {
+      workbenchDispatch({
+        type: "operation/failed",
+        message: "当前页面没有 Electron preload API，请通过桌面应用启动。"
+      });
+      return false;
+    }
+
+    try {
+      const createdEntry = await workspaceClient.createEntry(request);
+      return await handleRefreshExplorerDirectory(request.parentPath, createdEntry.path);
+    } catch (error) {
+      workbenchDispatch({ type: "operation/failed", message: getErrorMessage(error) });
+      return false;
+    }
+  };
+
+  const handleRenameExplorerEntry = async (
+    request: WorkspaceRenameEntryRequest
+  ): Promise<boolean> => {
+    if (workspaceClient === null) {
+      workbenchDispatch({
+        type: "operation/failed",
+        message: "当前页面没有 Electron preload API，请通过桌面应用启动。"
+      });
+      return false;
+    }
+
+    try {
+      const renamedEntry = await workspaceClient.renameEntry(request);
+      workbenchDispatch({
+        type: "workspace/entry-renamed",
+        oldPath: request.path,
+        newPath: renamedEntry.path
+      });
+      return await handleRefreshExplorerDirectory(
+        getWorkspaceParentPath(request.path),
+        renamedEntry.path
+      );
+    } catch (error) {
+      workbenchDispatch({ type: "operation/failed", message: getErrorMessage(error) });
+      return false;
+    }
+  };
+
+  const handleDeleteExplorerEntry = async (
+    request: WorkspaceDeleteEntryRequest
+  ): Promise<boolean> => {
+    if (workspaceClient === null) {
+      workbenchDispatch({
+        type: "operation/failed",
+        message: "当前页面没有 Electron preload API，请通过桌面应用启动。"
+      });
+      return false;
+    }
+
+    try {
+      await workspaceClient.deleteEntry(request);
+      workbenchDispatch({ type: "workspace/entry-deleted", path: request.path });
+      return await handleRefreshExplorerDirectory(getWorkspaceParentPath(request.path));
+    } catch (error) {
+      workbenchDispatch({ type: "operation/failed", message: getErrorMessage(error) });
+      return false;
+    }
+  };
+
   const handleOpenFile = async (path: string) => {
     if (workspaceClient === null) {
       workbenchDispatch({
@@ -374,6 +488,23 @@ export default function App() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [handleSaveFile]);
+
+  useEffect(() => {
+    const syncChatPaneWidth = () => {
+      setChatPaneWidth(() => {
+        const preferredWidth = readStoredChatPaneWidth() ?? DEFAULT_CHAT_PANE_WIDTH;
+
+        return clampChatPaneWidth(preferredWidth);
+      });
+    };
+
+    syncChatPaneWidth();
+    window.addEventListener("resize", syncChatPaneWidth);
+
+    return () => {
+      window.removeEventListener("resize", syncChatPaneWidth);
+    };
+  }, []);
 
   const handleSendMessage = async (content: string, images?: AiImageAttachment[]) => {
     if (aiClient === null) {
@@ -658,6 +789,9 @@ export default function App() {
           onRefreshWorkspace={handleRefreshWorkspace}
           onOpenFolder={handleOpenFolder}
           onOpenFile={handleOpenFile}
+          onCreateEntry={handleCreateExplorerEntry}
+          onRenameEntry={handleRenameExplorerEntry}
+          onDeleteEntry={handleDeleteExplorerEntry}
         />
         <EditorPane
           editorView={workbenchState.editorView}
@@ -740,6 +874,17 @@ function normalizeErrorMessage(message: string): string {
     .replace(/^Error:\s*/, "");
 }
 
+function getWorkspaceParentPath(relativePath: string): string {
+  const normalizedPath = relativePath.replaceAll("\\", "/");
+  const separatorIndex = normalizedPath.lastIndexOf("/");
+
+  if (separatorIndex === -1) {
+    return "";
+  }
+
+  return normalizedPath.slice(0, separatorIndex);
+}
+
 /**
  * 在会丢弃当前编辑内容的操作前确认用户意图。
  *
@@ -804,15 +949,22 @@ function createTurnId(): string {
  * 读取用户上次调整过的 AI 面板宽度。
  */
 function readInitialChatPaneWidth(): number {
+  return clampChatPaneWidth(readStoredChatPaneWidth() ?? DEFAULT_CHAT_PANE_WIDTH);
+}
+
+/**
+ * 读取用户保存的 AI 面板偏好宽度。
+ */
+function readStoredChatPaneWidth(): number | null {
   try {
     const storedWidth = window.localStorage.getItem(CHAT_PANE_WIDTH_STORAGE_KEY);
     if (storedWidth === null) {
-      return DEFAULT_CHAT_PANE_WIDTH;
+      return null;
     }
 
-    return clampChatPaneWidth(Number.parseInt(storedWidth, 10));
+    return Number.parseInt(storedWidth, 10);
   } catch {
-    return DEFAULT_CHAT_PANE_WIDTH;
+    return null;
   }
 }
 
@@ -835,7 +987,40 @@ function clampChatPaneWidth(width: number): number {
     return DEFAULT_CHAT_PANE_WIDTH;
   }
 
-  return Math.min(Math.max(width, MIN_CHAT_PANE_WIDTH), MAX_CHAT_PANE_WIDTH);
+  const widthBounds = getChatPaneWidthBounds();
+
+  return Math.min(Math.max(width, widthBounds.minimum), widthBounds.maximum);
+}
+
+/**
+ * 按当前窗口宽度收敛 AI 面板，避免缩小窗口后挤压编辑区。
+ */
+function getChatPaneWidthBounds(): { minimum: number; maximum: number } {
+  const viewportWidth = window.innerWidth;
+  const activityWidth = readRootPixelVariable("--activity-width", 52);
+  const explorerWidth = readRootPixelVariable("--explorer-width", 300);
+  const availableWidth =
+    viewportWidth - activityWidth - explorerWidth - CHAT_RESIZER_WIDTH - MIN_EDITOR_PANE_WIDTH;
+  const maximum = Math.min(
+    MAX_CHAT_PANE_WIDTH,
+    Math.max(MIN_COMPACT_CHAT_PANE_WIDTH, availableWidth)
+  );
+
+  return {
+    minimum: Math.min(MIN_CHAT_PANE_WIDTH, maximum),
+    maximum
+  };
+}
+
+function readRootPixelVariable(variableName: string, fallback: number): number {
+  const rawValue = window.getComputedStyle(document.documentElement).getPropertyValue(variableName);
+  const parsedValue = Number.parseFloat(rawValue);
+
+  if (Number.isNaN(parsedValue)) {
+    return fallback;
+  }
+
+  return parsedValue;
 }
 
 /**

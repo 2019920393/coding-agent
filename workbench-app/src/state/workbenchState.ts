@@ -78,13 +78,32 @@ export type WorkbenchAction =
   | { type: "workspace/root-refresh-started" }
 
   /** Explorer 根目录第一层条目刷新完成。 */
-  | { type: "workspace/root-refreshed"; entries: WorkspaceDirectoryEntry[] }
+  | {
+      type: "workspace/root-refreshed";
+      entries: WorkspaceDirectoryEntry[];
+      selectedPath?: WorkspaceRelativePath | null;
+    }
+
+  /** 工作区条目已重命名，同步已打开 tab 的路径。 */
+  | {
+      type: "workspace/entry-renamed";
+      oldPath: WorkspaceRelativePath;
+      newPath: WorkspaceRelativePath;
+    }
+
+  /** 工作区条目已删除，关闭对应的已打开 tab。 */
+  | { type: "workspace/entry-deleted"; path: WorkspaceRelativePath }
 
   /** 用户点击未展开的文件夹，开始读取该文件夹第一层。 */
   | { type: "directory/load-started"; path: string }
 
   /** 文件夹第一层读取完成，把子节点插入 Explorer。 */
-  | { type: "directory/loaded"; parentPath: string; entries: WorkspaceDirectoryEntry[] }
+  | {
+      type: "directory/loaded";
+      parentPath: string;
+      entries: WorkspaceDirectoryEntry[];
+      selectedPath?: WorkspaceRelativePath | null;
+    }
 
   /** 用户点击已展开的文件夹，收起它并移除子孙节点。 */
   | { type: "directory/collapsed"; path: string }
@@ -194,10 +213,16 @@ export function workbenchReducer(
         ...state,
         explorerNodes: createExplorerNodes(action.entries, 0),
         directoryEntryCache: { "": action.entries },
-        selectedPath: state.activeFilePath,
+        selectedPath: action.selectedPath === undefined ? state.activeFilePath : action.selectedPath,
         status: "ready",
         statusMessage: "资源管理器根目录已刷新。"
       };
+
+    case "workspace/entry-renamed":
+      return renameOpenFilesForWorkspaceEntry(state, action.oldPath, action.newPath);
+
+    case "workspace/entry-deleted":
+      return closeOpenFilesForWorkspaceEntry(state, action.path);
 
     case "directory/load-started":
       return {
@@ -220,7 +245,7 @@ export function workbenchReducer(
           ...state.directoryEntryCache,
           [action.parentPath]: action.entries
         },
-        selectedPath: action.parentPath,
+        selectedPath: action.selectedPath === undefined ? action.parentPath : action.selectedPath,
         status: "ready",
         statusMessage: "目录已更新。"
       };
@@ -680,6 +705,159 @@ function getNextActiveFilePathAfterClose(
 
   const nextIndex = Math.min(closedIndex, nextOpenFiles.length - 1);
   return nextOpenFiles[nextIndex].path;
+}
+
+/**
+ * 工作区文件或文件夹重命名后，同步已经打开的编辑器 tab。
+ *
+ * 工作流：
+ * 1. 文件重命名只会命中同一路径的 tab。
+ * 2. 文件夹重命名会命中其下所有已打开文件，并替换路径前缀。
+ * 3. 文件名或扩展名变化后，同时刷新 tab 名称和 Monaco 语言标识。
+ */
+function renameOpenFilesForWorkspaceEntry(
+  state: WorkbenchState,
+  oldPath: WorkspaceRelativePath,
+  newPath: WorkspaceRelativePath
+): WorkbenchState {
+  let changed = false;
+  const nextOpenFiles = state.openFiles.map((openFile): OpenFile => {
+    if (!isSameOrDescendantPath(openFile.path, oldPath)) {
+      return openFile;
+    }
+
+    changed = true;
+    const nextPath = replaceWorkspacePathPrefix(openFile.path, oldPath, newPath);
+    const nextName = getWorkspacePathBaseName(nextPath);
+
+    return {
+      ...openFile,
+      id: nextPath,
+      name: nextName,
+      path: nextPath,
+      language: getEditorLanguageId(nextName)
+    };
+  });
+
+  if (!changed) {
+    return state;
+  }
+
+  const nextActiveFilePath = replaceNullableWorkspacePathPrefix(
+    state.activeFilePath,
+    oldPath,
+    newPath
+  );
+  const nextSelectedPath = replaceNullableWorkspacePathPrefix(
+    state.selectedPath,
+    oldPath,
+    newPath
+  );
+
+  return {
+    ...state,
+    openFiles: nextOpenFiles,
+    activeFilePath: nextActiveFilePath,
+    selectedPath: nextSelectedPath,
+    status: "ready",
+    statusMessage: "已同步重命名后的编辑器路径。"
+  };
+}
+
+/**
+ * 工作区文件或文件夹删除后，关闭所有指向已删除路径的 tab。
+ */
+function closeOpenFilesForWorkspaceEntry(
+  state: WorkbenchState,
+  deletedPath: WorkspaceRelativePath
+): WorkbenchState {
+  const firstClosedIndex = state.openFiles.findIndex((openFile) =>
+    isSameOrDescendantPath(openFile.path, deletedPath)
+  );
+
+  if (firstClosedIndex === -1) {
+    return state;
+  }
+
+  const nextOpenFiles = state.openFiles.filter(
+    (openFile) => !isSameOrDescendantPath(openFile.path, deletedPath)
+  );
+  const nextActiveFilePath = getNextActiveFilePathAfterDelete(
+    state.activeFilePath,
+    nextOpenFiles,
+    firstClosedIndex
+  );
+  const selectedPathWasDeleted =
+    state.selectedPath !== null && isSameOrDescendantPath(state.selectedPath, deletedPath);
+
+  return {
+    ...state,
+    openFiles: nextOpenFiles,
+    activeFilePath: nextActiveFilePath,
+    editorView: nextActiveFilePath === null ? "welcome" : state.editorView,
+    selectedPath: selectedPathWasDeleted ? nextActiveFilePath : state.selectedPath,
+    status: "ready",
+    statusMessage: "已关闭被删除路径下的编辑器 tab。"
+  };
+}
+
+function getNextActiveFilePathAfterDelete(
+  activeFilePath: WorkspaceRelativePath | null,
+  nextOpenFiles: OpenFile[],
+  firstClosedIndex: number
+): WorkspaceRelativePath | null {
+  if (nextOpenFiles.length === 0) {
+    return null;
+  }
+
+  if (
+    activeFilePath !== null &&
+    nextOpenFiles.some((openFile) => openFile.path === activeFilePath)
+  ) {
+    return activeFilePath;
+  }
+
+  const nextIndex = Math.min(firstClosedIndex, nextOpenFiles.length - 1);
+  return nextOpenFiles[nextIndex].path;
+}
+
+function replaceNullableWorkspacePathPrefix(
+  path: WorkspaceRelativePath | null,
+  oldPath: WorkspaceRelativePath,
+  newPath: WorkspaceRelativePath
+): WorkspaceRelativePath | null {
+  if (path === null || !isSameOrDescendantPath(path, oldPath)) {
+    return path;
+  }
+
+  return replaceWorkspacePathPrefix(path, oldPath, newPath);
+}
+
+function replaceWorkspacePathPrefix(
+  path: WorkspaceRelativePath,
+  oldPath: WorkspaceRelativePath,
+  newPath: WorkspaceRelativePath
+): WorkspaceRelativePath {
+  const normalizedPath = normalizeExplorerPath(path);
+  const normalizedOldPath = normalizeExplorerPath(oldPath);
+  const normalizedNewPath = normalizeExplorerPath(newPath);
+
+  if (normalizedPath === normalizedOldPath) {
+    return normalizedNewPath;
+  }
+
+  return `${normalizedNewPath}${normalizedPath.slice(normalizedOldPath.length)}`;
+}
+
+function getWorkspacePathBaseName(path: WorkspaceRelativePath): string {
+  const normalizedPath = normalizeExplorerPath(path);
+  const separatorIndex = normalizedPath.lastIndexOf("/");
+
+  if (separatorIndex === -1) {
+    return normalizedPath;
+  }
+
+  return normalizedPath.slice(separatorIndex + 1);
 }
 
 /**

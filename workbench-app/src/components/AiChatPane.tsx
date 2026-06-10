@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import type {
   AiAgentSummary,
@@ -74,9 +74,13 @@ export function AiChatPane({
   const [draft, setDraft] = useState("");
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const feedItems = buildConversationFeed(
-    state.messages,
-    state.activityCards.filter((card) => card.kind === "tool")
+  const feedItems = useMemo(
+    () =>
+      buildConversationFeed(
+        state.messages,
+        state.activityCards.filter((card) => card.kind === "tool")
+      ),
+    [state.messages, state.activityCards]
   );
   const isCancelling = state.status === "cancelling";
   const canSend =
@@ -123,7 +127,7 @@ export function AiChatPane({
       return;
     }
     scrollElement.scrollTop = scrollElement.scrollHeight;
-  });
+  }, [state.messages.length, feedItems.length, state.status]);
 
   return (
     <aside className="ai-chat-pane" aria-label="Codo AI">
@@ -903,7 +907,7 @@ interface AiMessageBubbleProps {
   message: AiConversationMessage;
 }
 
-function AiMessageBubble({ message }: AiMessageBubbleProps) {
+const AiMessageBubble = memo(function AiMessageBubble({ message }: AiMessageBubbleProps) {
   const content = message.content || placeholderForMessage(message);
   const shouldRenderMarkdown = message.role === "assistant" && message.content.trim().length > 0;
   const hasImages = message.images.length > 0;
@@ -938,13 +942,13 @@ function AiMessageBubble({ message }: AiMessageBubbleProps) {
       </div>
     </article>
   );
-}
+});
 
 interface ActivityCardProps {
   card: AiActivityCard;
 }
 
-function ActivityCard({ card }: ActivityCardProps) {
+const ActivityCard = memo(function ActivityCard({ card }: ActivityCardProps) {
   const previewText = buildActivityPreviewText(card);
   const canShowDetails = card.detail.trim().length > 0 || card.receipt !== null;
   // 已完成的工具卡折叠成单行：summary 已说明做了什么，预览行（命令/路径）收进 details，
@@ -1003,7 +1007,7 @@ function ActivityCard({ card }: ActivityCardProps) {
       </div>
     </article>
   );
-}
+});
 
 interface MessageImageGridProps {
   images: AiImageAttachment[];

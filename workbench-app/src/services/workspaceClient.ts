@@ -1,8 +1,13 @@
 import type {
   CodoWorkspaceApi,
+  WorkspaceCreateEntryRequest,
+  WorkspaceCreateEntryResult,
+  WorkspaceDeleteEntryRequest,
   WorkspaceDirectoryEntry,
   WorkspaceInfo,
   WorkspaceReadFileResult,
+  WorkspaceRenameEntryRequest,
+  WorkspaceRenameEntryResult,
   WorkspaceWriteFileResult
 } from "../../shared/ipcTypes";
 
@@ -67,6 +72,36 @@ export class WorkspaceClient {
     return this.api.writeFile({ path: relativePath, content });
   }
 
+  /**
+   * 在工作区内新建文件或空文件夹。
+   */
+  public async createEntry(
+    request: WorkspaceCreateEntryRequest
+  ): Promise<WorkspaceCreateEntryResult> {
+    this.assertRelativePath(request.parentPath);
+    this.assertEntryName(request.name);
+    return this.api.createEntry(request);
+  }
+
+  /**
+   * 重命名工作区内文件或文件夹。
+   */
+  public async renameEntry(
+    request: WorkspaceRenameEntryRequest
+  ): Promise<WorkspaceRenameEntryResult> {
+    this.assertRelativePath(request.path);
+    this.assertEntryName(request.newName);
+    return this.api.renameEntry(request);
+  }
+
+  /**
+   * 删除工作区内文件或文件夹。
+   */
+  public async deleteEntry(request: WorkspaceDeleteEntryRequest): Promise<void> {
+    this.assertRelativePath(request.path);
+    await this.api.deleteEntry(request);
+  }
+
   private assertRelativePath(relativePath: string): void {
     if (typeof relativePath !== "string") {
       throw new Error("工作区路径必须是字符串。");
@@ -76,6 +111,12 @@ export class WorkspaceClient {
   private assertFileContent(content: string): void {
     if (typeof content !== "string") {
       throw new Error("文件内容必须是字符串。");
+    }
+  }
+
+  private assertEntryName(name: string): void {
+    if (typeof name !== "string") {
+      throw new Error("文件名必须是字符串。");
     }
   }
 }
