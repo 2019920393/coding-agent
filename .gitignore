@@ -19,11 +19,23 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 
 # Virtual environments
 venv/
 ENV/
 env/
+
+# Node / frontend
+node_modules/
+workbench-app/node_modules/
+workbench-app/.vite/
+workbench-app/dist/
+workbench-app/dist-electron/
+workbench-app/workbench-app/
+*.tsbuildinfo
 
 # IDE
 .vscode/
@@ -40,6 +52,7 @@ env/
 .codo/
 codo/evals/results/*
 !codo/evals/results/.gitignore
+codo/session/*_backup.py
 
 # OS
 .DS_Store
